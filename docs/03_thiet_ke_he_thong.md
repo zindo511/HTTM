@@ -295,7 +295,7 @@ flowchart LR
     F2 & F3 & F4 -->|"Xuất hiện dấu hiệu sụp đổ tư thế"| Trigger["Kích hoạt Tier 2 (Chỉ chạy khi có nghi vấn)"]
     Trigger --> TIER2
     S4 -- Đúng --> AlertFall["XÁC NHẬN BÁO ĐỘNG TÉ NGÃ!"]
-    S4 -- Sai: P(Cúi/Ngồi) cao --> Drop["Hủy cảnh báo giả (False Alarm)"]
+    S4 -- Sai: P(Normal) cao --> Drop["Hủy cảnh báo giả (False Alarm)"]
 ```
 
 ### 3.3.1. Phân tầng logic chi tiết
@@ -326,9 +326,9 @@ Kiến trúc mạng được thiết kế tối ưu, gọn nhẹ để có thể
 | **1** | **InputLayer** | `Input` | $T = 30\text{ frames}, F = 34\text{ features}$ | `(None, 30, 34)` | Tiếp nhận ma trận chuỗi 17 khớp xương chuẩn hóa |
 | **2** | **Bi-LSTM** | `Bidirectional(LSTM)` | 64 units mỗi chiều (Forward 64 + Backward 64), `return_sequences=False` | `(None, 128)` | Học ngữ cảnh biến thiên tư thế hai chiều theo trục thời gian |
 | **3** | **Regularization** | `Dropout` | `rate = 0.3` | `(None, 128)` | Chống hiện tượng quá khớp (Overfitting) trên dữ liệu thực |
-| **4** | **OutputLayer** | `Dense` | 3 units, activation = `'softmax'` | `(None, 3)` | Phân phối xác suất 3 lớp: `[Bình thường, Té ngã, Ngồi/Cúi]` |
+| **4** | **OutputLayer** | `Dense` | 3 units, activation = `'softmax'` | `(None, 3)` | Phân phối xác suất 3 lớp: `[Normal (Bình thường / Cúi), Running (Chạy), Falling (Té ngã)]` |
 
-> $\rightarrow$ Khi xác suất lớp `Té ngã` vượt ngưỡng tin cậy $P(\text{Fall}) \ge 0.85$, hệ thống mới kích hoạt cảnh báo đỏ; ngược lại nếu $P(\text{Ngồi/Cúi})$ chiếm ưu thế, sự kiện bị hủy bỏ ngay tại tầng suy luận.
+> $\rightarrow$ Khi xác suất lớp `Falling` vượt ngưỡng tin cậy $P(\text{Falling}) \ge 0.85$, hệ thống mới kích hoạt cảnh báo đỏ; ngược lại nếu $P(\text{Normal})$ chiếm ưu thế (đối tượng chỉ cúi nhặt đồ hoặc ngồi nghỉ), sự kiện bị hủy bỏ ngay tại tầng suy luận.
 
 ---
 
