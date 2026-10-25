@@ -1,0 +1,64 @@
+# ==============================================================================
+# HỆ THỐNG TRINH SÁT AN NINH THỜI GIAN THỰC (AI SURVEILLANCE SYSTEM CONFIG)
+# ==============================================================================
+
+system:
+  device: "cuda:0"          # "cuda:0" nếu có GPU, hoặc "cpu"
+  confidence_threshold: 0.4 # Ngưỡng tin cậy detection người
+  model_pose_path: "weights/yolov8n-pose.pt"
+  model_bilstm_path: "weights/fall_bilstm.pt"
+  enable_bilstm_tier2: false # Bật true khi đã có file fall_bilstm.pt
+
+camera:
+  source: 0                 # 0: Webcam máy tính, hoặc đường dẫn file "data/test_videos/sample.mp4", hoặc "rtsp://..."
+  width: 1280
+  height: 720
+  target_fps: 30
+  buffer_size: 2            # Kích thước Drop-Oldest Queue (1-2) chống lag luồng RTSP
+
+tracking:
+  tracker_type: "bytetrack"
+  track_thresh: 0.45
+  track_buffer: 30          # Số frame lưu vết khi mất dấu (LOST state)
+  match_thresh: 0.8
+  grace_period_exit: 2.0    # Thời gian gia hạn 2 giây chống rung biên ROI & che khuất
+  track_ttl: 5.0            # Xóa sạch dữ liệu track nếu mất dấu quá 5 giây
+
+behaviors:
+  intrusion:
+    enabled: true
+    min_confirm_frames: 5   # Yêu cầu chân nằm trong ROI liên tục 5 frames (chống nhiễu)
+    cooldown_seconds: 5.0   # Chống spam chuông xâm nhập
+  
+  loitering:
+    enabled: true
+    threshold_seconds: 10.0 # Quá 10 giây tính là lảng vảng
+    max_radius_pixels: 60.0 # Bán kính di chuyển tối đa trong vùng
+    cooldown_seconds: 10.0  # Chống spam chuông lảng vảng
+
+  running:
+    enabled: true
+    v_norm_threshold: 1.5   # Vận tốc gấp 1.5 lần chiều cao cơ thể / giây (BH/s)
+    body_lean_min: 15.0     # Độ đổ người nghiêng đi tối thiểu (độ)
+    cooldown_seconds: 4.0
+
+  falling:
+    enabled: true
+    aspect_ratio_max: 0.8   # Tỷ lệ H/W <= 0.8 (chuyển sang nằm ngang)
+    torso_angle_max: 40.0   # Góc trục thân so với mặt đất < 40 độ
+    v_y_drop_min: 0.8       # Gia tốc rơi thẳng đứng
+    bilstm_fall_threshold: 0.85 # Xác suất Tier 2 để khẳng định ngã thật
+    cooldown_seconds: 15.0
+
+zones:
+  - id: "ZONE_01"
+    name: "Vùng cấm kho tài liệu"
+    type: "RESTRICTED_INTRUSION" # RESTRICTED_INTRUSION hoặc LOITERING_ZONE
+    polygon: [[100, 150], [600, 150], [600, 600], [100, 600]]
+    color: [0, 0, 255]      # Đỏ (BGR)
+
+web:
+  host: "0.0.0.0"
+  port: 8000
+  stream_fps: 25
+  snapshots_dir: "data/snapshots"

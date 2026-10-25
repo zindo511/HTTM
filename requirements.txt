@@ -1,0 +1,21 @@
+# Core Deep Learning & Computer Vision
+ultralytics>=8.0.0
+torch>=2.0.0
+torchvision>=0.15.0
+opencv-python>=4.8.0
+numpy>=1.23.0,<2.0.0
+filterpy>=1.4.5
+scipy>=1.10.0
+
+# Web Backend & Real-time Communication
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+websockets>=11.0.0
+jinja2>=3.1.0
+python-multipart>=0.0.6
+
+# Configuration & Utilities
+pyyaml>=6.0.0
+pydantic>=2.0.0
+requests>=2.31.0
+aiofiles>=23.2.0

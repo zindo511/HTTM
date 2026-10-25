@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Surveillance System - Hệ Thống Trinh Sát An Ninh</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+    <!-- THANH TIÊU ĐỀ TRÊN CÙNG -->
+    <header>
+        <h1>🛡️ HỆ THỐNG TRINH SÁT AN NINH THỜI GIAN THỰC (AI SURVEILLANCE)</h1>
+        <div style="display: flex; gap: 12px; align-items: center;">
+            <span class="status-badge">ONLINE</span>
+            <span style="font-size: 0.85rem; color: #94a3b8;" id="clock">--:--:--</span>
+        </div>
+    </header>
+
+    <!-- BỐ CỤC CHÍNH (3 KHU VỰC) -->
+    <div class="main-container">
+        
+        <!-- [A] KHU VỰC LUỒNG CAMERA CHÍNH (70% WIDTH) -->
+        <section class="stream-panel">
+            <div class="stream-wrapper">
+                <img id="videoStream" src="/video_feed" alt="Live Camera Feed">
+                <canvas id="roiCanvas"></canvas>
+            </div>
+            
+            <div class="stream-controls">
+                <button id="btnDrawROI" class="btn btn-primary" onclick="toggleDrawROI()">🖌️ Vẽ vùng ROI mới</button>
+                <button class="btn btn-success" onclick="saveROI()">💾 Lưu vùng</button>
+                <button class="btn btn-danger" onclick="clearROI()">🗑️ Xóa sạch vùng</button>
+                <span style="font-size: 0.8rem; color: #94a3b8; margin-left: auto;">
+                    *Hướng dẫn: Nhấn "Vẽ vùng ROI", nhấp chuột lên màn hình để chọn các đỉnh đa giác, sau đó nhấn "Lưu vùng".
+                </span>
+            </div>
+        </section>
+
+        <!-- [B] KHU VỰC CỘT SỰ KIỆN THỜI GIAN THỰC (30% WIDTH) -->
+        <aside class="alert-panel">
+            <div class="panel-header">
+                <span>🔔 CẢNH BÁO TỨC THỜI (WEBSOCKET)</span>
+                <span style="font-size: 0.8rem; background: #334155; padding: 2px 8px; border-radius: 4px;" id="alertCount">0</span>
+            </div>
+            
+            <div class="alert-feed" id="alertFeed">
+                <!-- Các thẻ sự kiện cảnh báo sẽ được WebSocket đẩy tự động vào đây -->
+            </div>
+        </aside>
+
+    </div>
+
+    <!-- [C] THANH THỐNG KÊ NHANH Ở ĐÁY MÀN HÌNH -->
+    <footer>
+        <div>
+            <span>Hành vi giám sát: </span>
+            <strong style="color: #ef4444;">[Xâm nhập]</strong> &nbsp;|&nbsp; 
+            <strong style="color: #eab308;">[Lảng vảng]</strong> &nbsp;|&nbsp; 
+            <strong style="color: #f97316;">[Chạy]</strong> &nbsp;|&nbsp; 
+            <strong style="color: #ec4899;">[Té ngã]</strong>
+        </div>
+        <div>
+            <span>Engine: <strong>YOLOv8-Pose + ByteTrack</strong> | Pipeline: <strong>Drop-Oldest Queue (Zero Lag)</strong></span>
+        </div>
+    </footer>
+
+    <script src="/static/js/dashboard.js"></script>
+    <script>
+        // Cập nhật đồng hồ thời gian thực
+        setInterval(() => {
+            const now = new Date();
+            document.getElementById("clock").innerText = now.toLocaleTimeString();
+        }, 1000);
+    </script>
+</body>
+</html>
