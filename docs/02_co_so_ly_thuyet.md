@@ -107,10 +107,22 @@ Một đối tượng được xếp loại là **Lảng vảng (Loitering)** kh
 ### 2.3.4. Phân tích hình học tư thế và động học cho hành vi Chạy và Ngã
 
 #### A. Phân tích động học hành vi Chạy (Running Kinematics)
-Để triệt tiêu ảnh hưởng của biến dạng phối cảnh (Perspective Distortion), vận tốc tức thời của đối tượng trong cửa sổ trượt $W = [t - k, t]$ được chuẩn hóa theo chiều cao khung bao $H$:
-$$V_{norm}(t) = \frac{\|\mathbf{p}_t - \mathbf{p}_{t-k}\|}{k \cdot \Delta t \cdot H_t} \quad (\text{đơn vị: Body Heights / second - } BH/s)$$
-- Điều kiện kích hoạt:
-  $$V_{norm}(t) > V_{threshold} \quad (\text{với } V_{threshold} \approx 1.5 - 2.0 \, BH/s)$$
+Để nhận diện chính xác hành vi Chạy — đặc biệt trong không gian quan sát hẹp ($3 - 5\text{m}$) và triệt tiêu ảnh hưởng của biến dạng phối cảnh (Perspective Distortion), hệ thống áp dụng cơ chế đánh giá đa thông số kết hợp giữa **vận tốc tịnh tiến chuẩn hóa** và **đặc trưng dáng điệu từ YOLO-Pose**:
+
+1. **Vận tốc tịnh tiến chuẩn hóa theo chiều cao ($V_{norm}$):**
+   Vận tốc tức thời của đối tượng trong cửa sổ trượt $W = [t - k, t]$ được chuẩn hóa theo chiều cao khung bao $H$:
+   $$V_{norm}(t) = \frac{\|\mathbf{p}_t - \mathbf{p}_{t-k}\|}{k \cdot \Delta t \cdot H_t} \quad (\text{đơn vị: Body Heights / second - } BH/s)$$
+   - Ngưỡng kích hoạt vận tốc: $V_{norm}(t) > V_{threshold}$ (với $V_{threshold} \approx 1.5 - 2.0 \, BH/s$, gấp $2.5 - 3$ lần đi bộ thông thường).
+
+2. **Độ đổ người về phía trước (Forward Body Lean):**
+   Khi chuyển từ đi bộ sang bứt tốc chạy, trọng tâm cơ thể luôn đổ dồn về hướng di chuyển để tạo lực đẩy. Góc trục thân người $\theta$ (so với phương ngang) sẽ nghiêng giảm đi khoảng $15^\circ - 25^\circ$ so với trạng thái đi bộ thẳng đứng thông thường ($\theta_{run} \approx 65^\circ - 75^\circ$ thay vì $85^\circ - 90^\circ$).
+
+3. **Biên độ và tần số dao động chi dưới (Keypoints 13, 14, 15, 16):**
+   Trong không gian hẹp khi quãng đường di chuyển chưa đủ dài, hành vi chạy bứt tốc còn được đặc trưng mạnh mẽ bởi:
+   - Tần số nâng/hạ luân phiên với tốc độ cao của hai khớp đầu gối (Left Knee - 13, Right Knee - 14).
+   - Biên độ mở rộng góc sải chân và tần suất dịch chuyển vị trí tiếp đất của hai cổ chân (Left Ankle - 15, Right Ankle - 16).
+
+> $\rightarrow$ Sự phối hợp giữa $V_{norm}(t)$, góc đổ người $\theta$, và dao động khớp chi dưới (13-16) tạo thành bộ lọc 3 lớp vững chắc, giúp hệ thống phát hiện chính xác cú bứt tốc ngay từ $1 - 1.5\text{m}$ đầu tiên mà hoàn toàn loại trừ được các cảnh báo giả do bước nhanh hoặc đứng gần camera.
 
 #### B. Phân tích hình học bộ xương cho hành vi Ngã (Fall Detection Geometry)
 Hành vi ngã được xác định thông qua sự kết hợp của 3 chỉ số hình thái:
