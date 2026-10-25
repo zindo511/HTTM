@@ -1,8 +1,9 @@
 import os
 import json
 import asyncio
+import shutil
 from typing import List
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -56,7 +57,7 @@ def broadcast_alert_sync(payload: dict):
 
 @app.get("/", response_class=HTMLResponse)
 async def get_index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="index.html")
 
 
 @app.websocket("/ws/alerts")
@@ -132,3 +133,38 @@ async def get_events():
     if global_pipeline:
         return global_pipeline.db_service.get_recent_events(limit=30)
     return []
+
+
+@app.post("/api/change_source")
+async def change_source(request: Request):
+    """Đổi nguồn video ngay tức thì mà không cần khởi động lại server"""
+    global global_capture
+    data = await request.json()
+    new_source = data.get("source")
+    if new_source is not None:
+        if str(new_source).isdigit():
+            new_source = int(new_source)
+        if global_capture:
+            global_capture.stop()
+            from src.core.capture import CaptureThread
+            global_capture = CaptureThread(source=new_source, buffer_size=2)
+            global_capture.start_capture()
+        return {"status": "success", "new_source": str(new_source)}
+    return {"status": "error", "message": "Source missing"}
+
+
+@app.post("/api/upload_video")
+async def upload_video(file: UploadFile = File(...)):
+    """Tải file video MP4 từ trình duyệt lên và phát tự động"""
+    global global_capture
+    dest_path = os.path.join("data/test_videos", file.filename)
+    with open(dest_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    if global_capture:
+        global_capture.stop()
+        from src.core.capture import CaptureThread
+        global_capture = CaptureThread(source=dest_path, buffer_size=2)
+        global_capture.start_capture()
+    return {"status": "success", "video_path": dest_path}
+

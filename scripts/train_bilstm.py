@@ -9,6 +9,19 @@ Chạy trên Google Colab hoặc máy tính có GPU:
 """
 
 import os
+import sys
+from pathlib import Path
+
+if sys.platform == "win32":
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+
+# Thêm thư mục gốc dự án vào sys.path để import src.*
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.append(str(ROOT_DIR))
+
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader, random_split

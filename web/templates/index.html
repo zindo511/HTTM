@@ -27,13 +27,26 @@
                 <canvas id="roiCanvas"></canvas>
             </div>
             
-            <div class="stream-controls">
-                <button id="btnDrawROI" class="btn btn-primary" onclick="toggleDrawROI()">🖌️ Vẽ vùng ROI mới</button>
-                <button class="btn btn-success" onclick="saveROI()">💾 Lưu vùng</button>
-                <button class="btn btn-danger" onclick="clearROI()">🗑️ Xóa sạch vùng</button>
-                <span style="font-size: 0.8rem; color: #94a3b8; margin-left: auto;">
-                    *Hướng dẫn: Nhấn "Vẽ vùng ROI", nhấp chuột lên màn hình để chọn các đỉnh đa giác, sau đó nhấn "Lưu vùng".
-                </span>
+            <div class="stream-controls" style="flex-wrap: wrap; gap: 8px;">
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <button id="btnDrawROI" class="btn btn-primary" onclick="toggleDrawROI()">🖌️ Vẽ vùng ROI mới</button>
+                    <button class="btn btn-success" onclick="saveROI()">💾 Lưu vùng</button>
+                    <button class="btn btn-danger" onclick="clearROI()">🗑️ Xóa sạch vùng</button>
+                </div>
+                
+                <div style="display: flex; gap: 8px; align-items: center; margin-left: auto;">
+                    <label style="font-size: 0.85rem; color: #38bdf8; font-weight: 600;">Nguồn Video:</label>
+                    <select id="videoSelect" class="btn" style="background: #334155; color: #fff; cursor: pointer;" onchange="onSelectVideoSource(this.value)">
+                        <option value="data/test_videos/people_walking.mp4">📹 1. Xâm nhập / Lảng vảng (people_walking.mp4)</option>
+                        <option value="data/test_videos/fall_sample.mp4">🚨 2. Té ngã thực tế (fall_sample.mp4)</option>
+                        <option value="data/test_videos/walking_corridor.mp4">🚶 3. Hành lang đi lại (walking_corridor.mp4)</option>
+                        <option value="0">📷 4. Webcam máy tính trực tiếp</option>
+                    </select>
+                    <label class="btn btn-primary" style="margin: 0; cursor: pointer;">
+                        📤 Tải video lên
+                        <input type="file" id="videoUploadInput" accept="video/mp4,video/avi" style="display: none;" onchange="uploadCustomVideo(this)">
+                    </label>
+                </div>
             </div>
         </section>
 

@@ -9,6 +9,19 @@ Kịch bản chạy trên Google Colab hoặc máy cá nhân:
 """
 
 import os
+import sys
+from pathlib import Path
+
+if sys.platform == "win32":
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+
+# Thêm thư mục gốc dự án vào sys.path để import src.*
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.append(str(ROOT_DIR))
+
 import glob
 import cv2
 import numpy as np

@@ -184,3 +184,66 @@ async function clearROI() {
         alert("Lỗi khi xóa vùng: " + e);
     }
 }
+
+// -------------------------------------------------------------
+// CHUYỂN ĐỔI NGUỒN VIDEO & UPLOAD VIDEO NGAY TRÊN GIAO DIỆN
+// -------------------------------------------------------------
+async function onSelectVideoSource(sourceValue) {
+    try {
+        const response = await fetch("/api/change_source", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ source: sourceValue })
+        });
+        if (response.ok) {
+            console.log("[INFO] Đã chuyển nguồn video sang:", sourceValue);
+            // Tải lại thẻ img video_feed để làm mới luồng stream
+            refreshVideoStream();
+        }
+    } catch (e) {
+        console.error("Lỗi khi chuyển nguồn video:", e);
+    }
+}
+
+async function uploadCustomVideo(input) {
+    if (!input.files || input.files.length === 0) return;
+    const file = input.files[0];
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const btn = input.parentElement;
+    const oldText = btn.innerHTML;
+    btn.innerText = "⏳ Đang tải...";
+
+    try {
+        const res = await fetch("/api/upload_video", {
+            method: "POST",
+            body: formData
+        });
+        if (res.ok) {
+            const data = await res.json();
+            alert(`Tải video ${file.name} thành công! Hệ thống đang phát video của bạn.`);
+            
+            // Thêm vào dropdown menu và chọn
+            const select = document.getElementById("videoSelect");
+            const opt = document.createElement("option");
+            opt.value = data.video_path;
+            opt.innerText = `🎬 ${file.name}`;
+            select.appendChild(opt);
+            select.value = data.video_path;
+            
+            refreshVideoStream();
+        }
+    } catch (e) {
+        alert("Lỗi khi tải video: " + e);
+    } finally {
+        btn.innerHTML = oldText;
+    }
+}
+
+function refreshVideoStream() {
+    const img = document.getElementById("videoStream");
+    const currentSrc = img.src.split("?")[0];
+    img.src = `${currentSrc}?t=${Date.now()}`;
+}
+

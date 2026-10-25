@@ -10,7 +10,7 @@ system:
   enable_bilstm_tier2: false # Bật true khi đã có file fall_bilstm.pt
 
 camera:
-  source: 0                 # 0: Webcam máy tính, hoặc đường dẫn file "data/test_videos/sample.mp4", hoặc "rtsp://..."
+  source: "data/test_videos/people_walking.mp4" # Mặc định dùng video test người đi lại, đổi 0 nếu muốn dùng Webcam
   width: 1280
   height: 720
   target_fps: 30
