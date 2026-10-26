@@ -151,7 +151,6 @@ class SurveillancePipeline:
         self.track_manager.purge_stale_tracks(current_time)
 
         # 6. Vẽ thông số HUD lên màn hình
-        events = self.db_service.get_recent_events(limit=1)
-        draw_hud(annotated_frame, self.fps, active_count, len(events))
+        draw_hud(annotated_frame, self.fps, active_count, self.db_service.count_total_events())
 
         return annotated_frame

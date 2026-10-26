@@ -29,6 +29,10 @@
             
             <div class="stream-controls" style="flex-wrap: wrap; gap: 8px;">
                 <div style="display: flex; gap: 8px; align-items: center;">
+                    <select id="zoneTypeSelect" class="btn" style="background: #334155; color: #fff; cursor: pointer;" onchange="redrawCanvas()">
+                        <option value="RESTRICTED_INTRUSION">🚫 Vùng cấm Xâm nhập</option>
+                        <option value="LOITERING_ZONE">⏳ Vùng giám sát Lảng vảng</option>
+                    </select>
                     <button id="btnDrawROI" class="btn btn-primary" onclick="toggleDrawROI()">🖌️ Vẽ vùng ROI mới</button>
                     <button class="btn btn-success" onclick="saveROI()">💾 Lưu vùng</button>
                     <button class="btn btn-danger" onclick="clearROI()">🗑️ Xóa sạch vùng</button>
@@ -68,10 +72,10 @@
     <footer>
         <div>
             <span>Hành vi giám sát: </span>
-            <strong style="color: #ef4444;">[Xâm nhập]</strong> &nbsp;|&nbsp; 
-            <strong style="color: #eab308;">[Lảng vảng]</strong> &nbsp;|&nbsp; 
-            <strong style="color: #f97316;">[Chạy]</strong> &nbsp;|&nbsp; 
-            <strong style="color: #ec4899;">[Té ngã]</strong>
+            <strong style="color: #ef4444;">Xâm nhập: <span id="countINTRUSION">0</span></strong> &nbsp;|&nbsp; 
+            <strong style="color: #eab308;">Lảng vảng: <span id="countLOITERING">0</span></strong> &nbsp;|&nbsp; 
+            <strong style="color: #f97316;">Chạy: <span id="countRUNNING">0</span></strong> &nbsp;|&nbsp; 
+            <strong style="color: #ec4899;">Té ngã: <span id="countFALLING">0</span></strong>
         </div>
         <div>
             <span>Engine: <strong>YOLOv8-Pose + ByteTrack</strong> | Pipeline: <strong>Drop-Oldest Queue (Zero Lag)</strong></span>
