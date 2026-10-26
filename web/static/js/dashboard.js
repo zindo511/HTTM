@@ -2,6 +2,7 @@
 const alertFeed = document.getElementById("alertFeed");
 const alertCountEl = document.getElementById("alertCount");
 let totalAlerts = 0;
+const alertCountsByType = { INTRUSION: 0, LOITERING: 0, RUNNING: 0, FALLING: 0 };
 
 // Khởi tạo WebSocket
 const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -14,16 +15,29 @@ ws.onopen = () => {
 ws.onmessage = (event) => {
     try {
         const data = JSON.parse(event.data);
+        incrementAlertCounters(data.event_type);
         addAlertCard(data);
+        playBeepSound();
     } catch (e) {
         console.error("Lỗi parse dữ liệu WebSocket:", e);
     }
 };
 
-function addAlertCard(data) {
-    totalAlerts++;
+function renderAlertCounters() {
     alertCountEl.innerText = totalAlerts;
+    for (const [type, count] of Object.entries(alertCountsByType)) {
+        const el = document.getElementById(`count${type}`);
+        if (el) el.innerText = count;
+    }
+}
 
+function incrementAlertCounters(eventType) {
+    totalAlerts++;
+    alertCountsByType[eventType] = (alertCountsByType[eventType] || 0) + 1;
+    renderAlertCounters();
+}
+
+function addAlertCard(data) {
     const card = document.createElement("div");
     card.className = `alert-card ${data.event_type}`;
     
@@ -46,10 +60,33 @@ function addAlertCard(data) {
     `;
 
     alertFeed.insertBefore(card, alertFeed.firstChild);
-    
-    // Tự động phát âm thanh cảnh báo ngắn
-    playBeepSound();
 }
+
+// Nạp lại lịch sử cảnh báo và bộ đếm từ SQLite khi tải (F5) trang
+async function loadAlertHistory() {
+    try {
+        const [eventsRes, statsRes] = await Promise.all([
+            fetch("/api/events"),
+            fetch("/api/events/stats")
+        ]);
+        const events = await eventsRes.json();
+        const stats = await statsRes.json();
+
+        // API trả về mới nhất trước, còn addAlertCard chèn lên đầu nên duyệt ngược
+        for (const ev of events.slice().reverse()) {
+            addAlertCard(ev);
+        }
+
+        totalAlerts = stats.total || 0;
+        Object.assign(alertCountsByType, stats.by_type || {});
+        renderAlertCounters();
+    } catch (e) {
+        console.error("Lỗi khi tải lịch sử cảnh báo:", e);
+    }
+}
+
+// Không dùng window.onload: thẻ <img> MJPEG stream không bao giờ tải xong nên sự kiện load không bao giờ xảy ra
+loadAlertHistory();
 
 function playBeepSound() {
     try {
@@ -77,15 +114,21 @@ const videoStream = document.getElementById("videoStream");
 let isDrawing = false;
 let polygonPoints = [];
 
+// Kích thước gốc của khung hình video do backend trả về (tọa độ OpenCV)
+function getFrameSize() {
+    return {
+        width: videoStream.naturalWidth || 1280,
+        height: videoStream.naturalHeight || 720
+    };
+}
+
 function toggleDrawROI() {
     isDrawing = !isDrawing;
     const btn = document.getElementById("btnDrawROI");
     if (isDrawing) {
         canvas.style.display = "block";
-        canvas.width = videoStream.clientWidth;
-        canvas.height = videoStream.clientHeight;
         polygonPoints = [];
-        redrawCanvas();
+        syncCanvasToVideo();
         btn.innerText = "❌ Hủy vẽ";
         btn.classList.replace("btn-primary", "btn-danger");
     } else {
@@ -95,29 +138,47 @@ function toggleDrawROI() {
     }
 }
 
+// Phủ canvas khít lên vùng ảnh video thực (ảnh được căn giữa trong khung đen nên không trùng khung bao)
+function syncCanvasToVideo() {
+    const wrapperRect = videoStream.parentElement.getBoundingClientRect();
+    const videoRect = videoStream.getBoundingClientRect();
+    canvas.style.left = `${videoRect.left - wrapperRect.left}px`;
+    canvas.style.top = `${videoRect.top - wrapperRect.top}px`;
+    canvas.style.width = `${videoRect.width}px`;
+    canvas.style.height = `${videoRect.height}px`;
+    canvas.width = Math.round(videoRect.width);
+    canvas.height = Math.round(videoRect.height);
+    redrawCanvas();
+}
+
+window.addEventListener("resize", () => {
+    if (isDrawing) syncCanvasToVideo();
+});
+
 canvas.addEventListener("click", (e) => {
     if (!isDrawing) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = Math.round(e.clientX - rect.left);
-    const y = Math.round(e.clientY - rect.top);
-    
-    // Quy đổi tỷ lệ nếu video hiển thị co giãn
-    const scaleX = 1280 / canvas.width;
-    const scaleY = 720 / canvas.height;
-    
-    polygonPoints.push([Math.round(x * scaleX), Math.round(y * scaleY)]);
-    redrawCanvas();
+    // Tính theo khung ảnh video để không phụ thuộc vị trí canvas
+    const rect = videoStream.getBoundingClientRect();
+    const frameSize = getFrameSize();
+    const x = (e.clientX - rect.left) * frameSize.width / rect.width;
+    const y = (e.clientY - rect.top) * frameSize.height / rect.height;
+    if (x < 0 || y < 0 || x > frameSize.width || y > frameSize.height) return;
+
+    polygonPoints.push([Math.round(x), Math.round(y)]);
+    syncCanvasToVideo();
 });
 
 function redrawCanvas() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (polygonPoints.length === 0) return;
 
-    const scaleX = canvas.width / 1280;
-    const scaleY = canvas.height / 720;
+    const frameSize = getFrameSize();
+    const scaleX = canvas.width / frameSize.width;
+    const scaleY = canvas.height / frameSize.height;
 
-    ctx.strokeStyle = "#ef4444";
-    ctx.fillStyle = "rgba(239, 68, 68, 0.2)";
+    const isLoiteringZone = document.getElementById("zoneTypeSelect").value === "LOITERING_ZONE";
+    ctx.strokeStyle = isLoiteringZone ? "#eab308" : "#ef4444";
+    ctx.fillStyle = isLoiteringZone ? "rgba(234, 179, 8, 0.2)" : "rgba(239, 68, 68, 0.2)";
     ctx.lineWidth = 2;
 
     ctx.beginPath();
@@ -150,13 +211,15 @@ async function saveROI() {
         return;
     }
 
-    const zoneName = prompt("Nhập tên vùng cấm mới:", "Vùng cấm mới");
+    const zoneType = document.getElementById("zoneTypeSelect").value;
+    const defaultName = zoneType === "LOITERING_ZONE" ? "Vùng lảng vảng mới" : "Vùng cấm mới";
+    const zoneName = prompt("Nhập tên vùng mới:", defaultName);
     if (!zoneName) return;
 
     const newZone = {
         id: "ZONE_" + Date.now().toString().slice(-4),
         name: zoneName,
-        type: "RESTRICTED_INTRUSION",
+        type: zoneType,
         polygon: polygonPoints
     };
 
@@ -167,7 +230,7 @@ async function saveROI() {
             body: JSON.stringify(newZone)
         });
         if (response.ok) {
-            alert("Đã lưu và kích hoạt vùng cấm ROI mới thành công!");
+            alert("Đã lưu và kích hoạt vùng ROI mới thành công!");
             toggleDrawROI();
         }
     } catch (e) {

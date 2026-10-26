@@ -55,6 +55,27 @@ def broadcast_alert_sync(payload: dict):
         asyncio.run_coroutine_threadsafe(manager.broadcast(payload), global_loop)
 
 
+def _db_zone_to_pipeline_zone(row: dict) -> dict:
+    """Chuyển bản ghi bảng zones (SQLite) về định dạng zone dùng trong pipeline"""
+    return {
+        "id": row["zone_id"],
+        "name": row["zone_name"],
+        "type": row["zone_type"],
+        "polygon": row["polygon_points"],
+    }
+
+
+@app.on_event("startup")
+async def load_zones_from_db():
+    """Nạp lại các vùng ROI đã lưu trong SQLite khi khởi động server"""
+    if not global_pipeline:
+        return
+    existing_ids = {z.get("id") for z in global_pipeline.zones}
+    for row in global_pipeline.db_service.load_zones():
+        if row["zone_id"] not in existing_ids:
+            global_pipeline.zones.append(_db_zone_to_pipeline_zone(row))
+
+
 @app.get("/", response_class=HTMLResponse)
 async def get_index(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
@@ -124,15 +145,38 @@ async def clear_zones():
     global global_pipeline
     if global_pipeline:
         global_pipeline.zones = []
+        global_pipeline.db_service.clear_all_zones()
     return {"status": "cleared"}
 
 
 @app.get("/api/events")
 async def get_events():
     global global_pipeline
-    if global_pipeline:
-        return global_pipeline.db_service.get_recent_events(limit=30)
-    return []
+    if not global_pipeline:
+        return []
+    # Trả về cùng định dạng với gói tin WebSocket /ws/alerts để frontend dùng chung
+    events = []
+    for row in global_pipeline.db_service.get_recent_events(limit=30):
+        snapshot_name = os.path.basename((row.get("snapshot_path") or "").replace("\\", "/"))
+        events.append({
+            "event_type": row["event_type"],
+            "track_id": row["track_id"],
+            "zone_id": row["zone_id"] or "N/A",
+            "confidence": round((row["confidence"] or 0) * 100, 1),
+            "timestamp": row["timestamp"],
+            "snapshot_url": f"/snapshots/{snapshot_name}",
+            "extra_info": "",
+        })
+    return events
+
+
+@app.get("/api/events/stats")
+async def get_event_stats():
+    global global_pipeline
+    if not global_pipeline:
+        return {"total": 0, "by_type": {}}
+    by_type = global_pipeline.db_service.count_events_by_type()
+    return {"total": sum(by_type.values()), "by_type": by_type}
 
 
 @app.post("/api/change_source")
