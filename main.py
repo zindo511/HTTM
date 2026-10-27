@@ -4,6 +4,11 @@ import yaml
 import asyncio
 import uvicorn
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 from src.core.capture import CaptureThread
 from src.core.pipeline import SurveillancePipeline
 import web.app as web_module

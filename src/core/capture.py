@@ -1,8 +1,14 @@
 import time
+import sys
 import threading
 from queue import Queue, Full
 import cv2
 from typing import Optional, Union, Tuple
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 
 class DropOldestQueue:
@@ -61,20 +67,34 @@ class CaptureThread(threading.Thread):
         self.frame_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 720)
         
         self.running = True
+        self.is_video_file = isinstance(self.source, str) and not str(self.source).startswith(("rtsp://", "http://", "https://"))
         self.start()
         print(f"[INFO] Khởi chạy luồng Capture thành công. Nguồn: {self.source} ({self.frame_width}x{self.frame_height} @ {self.fps:.1f} FPS)")
         return True
 
     def run(self):
+        # Tính khoảng cách thời gian giữa 2 khung hình để video phát đúng tốc độ thực tế (1x)
+        frame_interval = 1.0 / max(1.0, self.fps)
+        last_frame_time = time.time()
+
         while self.running:
             if not self.cap or not self.cap.isOpened():
                 break
                 
+            # Nếu là file video trên đĩa: Điều tiết nhịp đọc khớp với FPS gốc của video (chống chạy tua nhanh)
+            if self.is_video_file:
+                elapsed = time.time() - last_frame_time
+                wait_time = frame_interval - elapsed
+                if wait_time > 0:
+                    time.sleep(wait_time)
+                last_frame_time = time.time()
+
             ret, frame = self.cap.read()
             if not ret:
                 # Nếu là file video hết thì tua lại từ đầu để loop test
-                if isinstance(self.source, str) and not self.source.startswith("rtsp://"):
+                if self.is_video_file:
                     self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    last_frame_time = time.time()
                     continue
                 else:
                     print("[WARNING] Mất tín hiệu luồng camera...")
