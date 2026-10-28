@@ -17,6 +17,9 @@ class TrackHistory:
     bbox_history: deque = field(default_factory=lambda: deque(maxlen=30))
     keypoints_history: deque = field(default_factory=lambda: deque(maxlen=30))
     
+    timestamp_history: deque = field(default_factory=lambda: deque(maxlen=30))
+    keypoint_bbox_history: deque = field(default_factory=lambda: deque(maxlen=30))
+
     current_state: str = "NORMAL"
     current_zone_id: Optional[str] = None
     zone_entry_time: Optional[float] = None
@@ -72,9 +75,14 @@ class TrackManager:
         track = self.get_or_create(track_id, current_time)
         track.last_seen = current_time
         track.bbox_history.append(bbox)
+        track.timestamp_history.append(current_time)
         track.foot_positions.append(foot_point)
         if keypoints is not None:
             track.keypoints_history.append(keypoints)
+            track.keypoint_bbox_history.append(bbox)
+        else:
+            track.keypoints_history.clear()
+            track.keypoint_bbox_history.clear()
         return track
 
     def purge_stale_tracks(self, current_time: float) -> List[int]:
