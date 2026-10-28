@@ -87,13 +87,13 @@ class AlertManager:
             
             # 3. Tạo gói tin đẩy qua WebSocket lên giao diện Web Dashboard
             payload = {
-                "event_type": event_type,
-                "track_id": track_id,
-                "zone_id": zone_id or "N/A",
-                "confidence": round(confidence * 100, 1),
-                "timestamp": time_str,
+                "event_type": str(event_type),
+                "track_id": int(track_id),
+                "zone_id": str(zone_id) if zone_id is not None else "N/A",
+                "confidence": round(float(confidence) * 100, 1),
+                "timestamp": str(time_str),
                 "snapshot_url": f"/snapshots/{filename}",
-                "extra_info": extra_info or ""
+                "extra_info": str(extra_info) if extra_info is not None else ""
             }
             
             if self.ws_broadcast_callback:
