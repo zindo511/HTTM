@@ -4,24 +4,69 @@ const alertCountEl = document.getElementById("alertCount");
 let totalAlerts = 0;
 const alertCountsByType = { INTRUSION: 0, LOITERING: 0, RUNNING: 0, FALLING: 0 };
 
-// Khởi tạo WebSocket
-const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-const ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws/alerts`);
+// WebSocket có tự động kết nối lại.
+let ws = null;
+let reconnectTimer = null;
+let reconnectDelay = 1000;
 
-ws.onopen = () => {
-    console.log("[WS] Đã kết nối thành công tới WebSocket Alert Channel.");
-};
-
-ws.onmessage = (event) => {
-    try {
-        const data = JSON.parse(event.data);
-        incrementAlertCounters(data.event_type);
-        addAlertCard(data);
-        playBeepSound();
-    } catch (e) {
-        console.error("Lỗi parse dữ liệu WebSocket:", e);
+function connectAlertSocket() {
+    if (
+        ws &&
+        (ws.readyState === WebSocket.OPEN ||
+         ws.readyState === WebSocket.CONNECTING)
+    ) {
+        return;
     }
-};
+
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const socket = new WebSocket(
+        `${protocol}//${window.location.host}/ws/alerts`
+    );
+    ws = socket;
+
+    socket.onopen = () => {
+        reconnectDelay = 1000;
+        console.log("[WS] Đã kết nối kênh cảnh báo.");
+    };
+
+    socket.onmessage = (event) => {
+        console.log("[WS] Nhận cảnh báo:", event.data);
+
+        try {
+            const data = JSON.parse(event.data);
+            addAlertCard(data);
+            incrementAlertCounters(data.event_type);
+            playBeepSound();
+        } catch (error) {
+            console.error(
+                "[WS] Không hiển thị được cảnh báo:",
+                error,
+                event.data
+            );
+        }
+    };
+
+    socket.onerror = (error) => {
+        console.error("[WS] Lỗi kết nối:", error);
+        socket.close();
+    };
+
+    socket.onclose = (event) => {
+        console.warn(
+            `[WS] Mất kết nối (${event.code}), đang thử lại...`
+        );
+
+        clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(
+            connectAlertSocket,
+            reconnectDelay
+        );
+
+        reconnectDelay = Math.min(reconnectDelay * 2, 10000);
+    };
+}
+
+connectAlertSocket();
 
 function renderAlertCounters() {
     alertCountEl.innerText = totalAlerts;
