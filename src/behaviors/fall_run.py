@@ -39,13 +39,25 @@ class MotionAndFallDetector(BaseBehaviorDetector):
         frame: np.ndarray, 
         zones: List[Dict[str, Any]]
     ):
-        if len(track.bbox_history) < 5 or len(track.keypoints_history) == 0:
+        if track.current_state in ("RUNNING_ALERT", "FALLING_ALERT"):
+            track.current_state = "NORMAL"
+        if (len(track.bbox_history) < 5 or len(track.timestamp_history) < 5
+                or len(track.keypoints_history) == 0):
             return
 
         current_bbox = track.bbox_history[-1]
         x1, y1, x2, y2 = current_bbox
         current_height = max(1.0, y2 - y1)
         kpts = track.keypoints_history[-1]
+        if kpts.ndim != 2 or kpts.shape[0] < 13 or kpts.shape[1] < 2:
+            return
+        shoulder_pt = tuple((kpts[5, :2] + kpts[6, :2]) / 2.0)
+        hip_pt = tuple((kpts[11, :2] + kpts[12, :2]) / 2.0)
+        torso_angle = calculate_torso_angle(shoulder_pt, hip_pt)
+        body_lean = 90.0 - torso_angle
+        dt = track.timestamp_history[-1] - track.timestamp_history[-5]
+        if not math.isfinite(dt) or dt <= 0:
+            return
 
         # ---------------------------------------------------------
         # 1. KIỂM TRA HÀNH VI CHẠY (RUNNING KINEMATICS)
@@ -56,12 +68,10 @@ class MotionAndFallDetector(BaseBehaviorDetector):
             prev_foot = ((prev_bbox[0] + prev_bbox[2]) / 2.0, prev_bbox[3])
             curr_foot = ((x1 + x2) / 2.0, y2)
             
-            # Giả định tốc độ 30 FPS -> delta_t xấp xỉ 5 / 30 = 0.167s
-            dt = 5.0 / 30.0
             dist_px = math.hypot(curr_foot[0] - prev_foot[0], curr_foot[1] - prev_foot[1])
             v_norm = dist_px / (dt * current_height)  # Đơn vị: Body Heights / second
 
-            if v_norm >= self.v_norm_thresh:
+            if v_norm >= self.v_norm_thresh and body_lean >= self.body_lean_min:
                 track.current_state = "RUNNING_ALERT"
                 if track.can_trigger_alert("RUNNING", current_time, self.cooldown_run):
                     if self.alert_manager:
@@ -88,7 +98,12 @@ class MotionAndFallDetector(BaseBehaviorDetector):
             torso_angle = calculate_torso_angle(shoulder_pt, hip_pt)
             
             # Kiểm tra xem có dấu hiệu sụp đổ tư thế hay không
-            is_tier1_triggered = (ar <= self.ar_max) or (torso_angle <= self.angle_max)
+            prev_bbox = track.bbox_history[-5]
+            prev_center_y = (prev_bbox[1] + prev_bbox[3]) / 2.0
+            center_y = (y1 + y2) / 2.0
+            vy_drop = (center_y - prev_center_y) / (dt * current_height)
+            is_tier1_triggered = ((ar <= self.ar_max or torso_angle <= self.angle_max)
+                                  and vy_drop >= self.vy_drop_min)
             
             if is_tier1_triggered:
                 # TIER 2: DEEP BI-LSTM VERIFIER (Nếu có nạp model)
@@ -96,7 +111,7 @@ class MotionAndFallDetector(BaseBehaviorDetector):
                     # Lấy cửa sổ 30 frames gần nhất và chuẩn hóa Root-Relative
                     seq_features = []
                     hist_slice = list(track.keypoints_history)[-30:]
-                    bbox_slice = list(track.bbox_history)[-30:]
+                    bbox_slice = list(track.keypoint_bbox_history)[-30:]
                     
                     for k_frame, b_frame in zip(hist_slice, bbox_slice):
                         norm_vec = normalize_skeleton_root_relative(k_frame, b_frame)
@@ -110,7 +125,8 @@ class MotionAndFallDetector(BaseBehaviorDetector):
                         self._trigger_fall_alert(track, current_time, frame, prob_fall, "Tier 2 Verified")
                     else:
                         # Bác bỏ báo động giả (người cúi nhặt đồ hoặc ngồi bệt)
-                        track.current_state = "NORMAL"
+                        if track.current_state == "FALLING_ALERT":
+                            track.current_state = "NORMAL"
                 else:
                     # Nếu chưa gắn Bi-LSTM model: Dùng Heuristic của Tier 1 để cảnh báo trực tiếp
                     self._trigger_fall_alert(track, current_time, frame, 0.9, f"Tier 1 (AR={ar:.2f}, θ={torso_angle:.1f}°)")

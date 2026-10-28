@@ -28,16 +28,22 @@ class ConnectionManager:
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
+        print(f"[WS] Dashboard kết nối. Tổng: {len(self.active_connections)}")
 
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
 
     async def broadcast(self, message: dict):
+        # Chuyển dữ liệu thành JSON trước khi gửi.
+        # Nếu lỗi, callback bên dưới sẽ ghi rõ nguyên nhân.
+        text = json.dumps(message, ensure_ascii=False)
+
         for connection in list(self.active_connections):
             try:
-                await connection.send_text(json.dumps(message))
-            except Exception:
+                await connection.send_text(text)
+            except Exception as exc:
+                print(f"[WS ERROR] Gửi tới dashboard thất bại: {exc}")
                 self.disconnect(connection)
 
 manager = ConnectionManager()
@@ -49,10 +55,25 @@ global_loop = None
 
 
 def broadcast_alert_sync(payload: dict):
-    """Callback đồng bộ được gọi từ AlertManager chạy trên luồng nền"""
-    global global_loop
-    if global_loop and manager.active_connections:
-        asyncio.run_coroutine_threadsafe(manager.broadcast(payload), global_loop)
+    """Nhận cảnh báo từ luồng nền và chuyển sang event loop của server."""
+    loop = global_loop
+
+    if loop is None or loop.is_closed() or not loop.is_running():
+        print("[WS WARNING] Event loop chưa hoạt động, chưa gửi được cảnh báo.")
+        return
+
+    future = asyncio.run_coroutine_threadsafe(
+        manager.broadcast(payload),
+        loop
+    )
+
+    def report_result(done):
+        try:
+            done.result()
+        except Exception as exc:
+            print(f"[WS ERROR] Không gửi được cảnh báo: {exc}")
+
+    future.add_done_callback(report_result)
 
 
 def _db_zone_to_pipeline_zone(row: dict) -> dict:
@@ -67,13 +88,19 @@ def _db_zone_to_pipeline_zone(row: dict) -> dict:
 
 @app.on_event("startup")
 async def load_zones_from_db():
-    """Nạp lại các vùng ROI đã lưu trong SQLite khi khởi động server"""
+    global global_loop
+    global_loop = asyncio.get_running_loop()
+    print("[WS] Đã gắn event loop của server.")
+
     if not global_pipeline:
         return
+
     existing_ids = {z.get("id") for z in global_pipeline.zones}
+
     for row in global_pipeline.db_service.load_zones():
         if row["zone_id"] not in existing_ids:
             global_pipeline.zones.append(_db_zone_to_pipeline_zone(row))
+            existing_ids.add(row["zone_id"])
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -84,11 +111,15 @@ async def get_index(request: Request):
 @app.websocket("/ws/alerts")
 async def websocket_alerts_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
+
     try:
         while True:
-            # Giữ kết nối lắng nghe
             await websocket.receive_text()
     except WebSocketDisconnect:
+        print("[WS] Dashboard ngắt kết nối.")
+    except Exception as exc:
+        print(f"[WS ERROR] Kết nối dashboard: {exc}")
+    finally:
         manager.disconnect(websocket)
 
 

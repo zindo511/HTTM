@@ -8,7 +8,7 @@ class BiLSTMActionClassifier(nn.Module):
     """
     Mạng Bi-LSTM phân loại hành động dựa trên chuỗi 17 khớp xương (Tier 2 Verifier).
     Đầu vào: (Batch_size, 30, 34) - Cửa sổ trượt 30 frames của 17 khớp chuẩn hóa.
-    Đầu ra: (Batch_size, 3) - Phân phối Softmax 3 lớp: [Normal, Running, Falling].
+    Đầu ra: (Batch_size, 3) - Logits 3 lớp: [Normal, Running, Falling].
     """
     def __init__(self, input_dim: int = 34, hidden_dim: int = 64, num_classes: int = 3, dropout_rate: float = 0.3):
         super(BiLSTMActionClassifier, self).__init__()
@@ -25,7 +25,6 @@ class BiLSTMActionClassifier(nn.Module):
         self.dropout = nn.Dropout(dropout_rate)
         # 64 units * 2 chiều = 128 chiều đầu ra
         self.fc = nn.Linear(hidden_dim * 2, num_classes)
-        self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x shape: (batch_size, 30, 34)
@@ -34,8 +33,7 @@ class BiLSTMActionClassifier(nn.Module):
         last_out = lstm_out[:, -1, :]  # shape: (batch_size, 128)
         out = self.dropout(last_out)
         logits = self.fc(out)
-        probs = self.softmax(logits)
-        return probs
+        return logits
 
 
 class BiLSTMInferenceWrapper:
@@ -64,7 +62,7 @@ class BiLSTMInferenceWrapper:
             
         tensor_x = torch.from_numpy(sequence_30x34).float().to(self.device)
         with torch.no_grad():
-            probs = self.model(tensor_x).cpu().numpy()[0]
+            probs = torch.softmax(self.model(tensor_x), dim=1).cpu().numpy()[0]
             
         # probs: [p_normal, p_running, p_falling]
         return float(probs[0]), float(probs[1]), float(probs[2])

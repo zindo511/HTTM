@@ -47,6 +47,8 @@ def train_model(
     batch_size: int = 32,
     lr: float = 0.001
 ):
+    if epochs < 1:
+        raise ValueError("epochs phải >= 1")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[INFO] Sử dụng thiết bị huấn luyện: {device}")
     
@@ -68,6 +70,8 @@ def train_model(
     val_len = int(0.15 * total_len)
     test_len = total_len - train_len - val_len
     
+    if min(train_len, val_len, test_len) == 0:
+        raise ValueError("Cần đủ dữ liệu cho cả train, validation và test")
     train_set, val_set, test_set = random_split(dataset, [train_len, val_len, test_len])
     
     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
@@ -134,11 +138,27 @@ def train_model(
         # Lưu checkpoint mô hình tốt nhất
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            os.makedirs(os.path.dirname(weights_output_path), exist_ok=True)
+            os.makedirs(os.path.dirname(weights_output_path) or ".", exist_ok=True)
             torch.save(model.state_dict(), weights_output_path)
             
     print(f"\n[SUCCESS] Huấn luyện hoàn tất! Trọng số tối ưu đã được lưu tại: {weights_output_path}")
     
+    # Test đúng checkpoint có validation loss thấp nhất.
+    model.load_state_dict(torch.load(weights_output_path, map_location=device, weights_only=True))
+    if HAS_PLOT_LIB:
+        os.makedirs("docs", exist_ok=True)
+        fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+        for ax, metric in zip(axes, ("loss", "acc")):
+            ax.plot(history["train_" + metric], label="Train")
+            ax.plot(history["val_" + metric], label="Validation")
+            ax.set(xlabel="Epoch", ylabel=metric.title(), title=metric.title())
+            ax.legend()
+        fig.tight_layout()
+        fig.savefig("docs/training_curves.png")
+        plt.close(fig)
+    else:
+        print("[WARNING] Thiếu thư viện vẽ biểu đồ; không tạo training curves.")
+
     # Đánh giá trên tập Test
     model.eval()
     all_preds = []
@@ -154,10 +174,10 @@ def train_model(
     if HAS_PLOT_LIB and len(all_targets) > 0:
         target_names = ["Normal (0)", "Running (1)", "Falling (2)"]
         print("\n--- BÁO CÁO PHÂN LOẠI TRÊN TẬP TEST ---")
-        print(classification_report(all_targets, all_preds, target_names=target_names))
+        print(classification_report(all_targets, all_preds, labels=[0, 1, 2], target_names=target_names, zero_division=0))
         
         # Vẽ Ma trận nhầm lẫn
-        cm = confusion_matrix(all_targets, all_preds)
+        cm = confusion_matrix(all_targets, all_preds, labels=[0, 1, 2])
         plt.figure(figsize=(6, 5))
         sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=target_names, yticklabels=target_names)
         plt.title("Confusion Matrix 3x3 - Test Set")
@@ -166,6 +186,7 @@ def train_model(
         plt.tight_layout()
         os.makedirs("docs", exist_ok=True)
         plt.savefig("docs/confusion_matrix.png")
+        plt.close()
         print("[INFO] Đã lưu ảnh ma trận nhầm lẫn vào docs/confusion_matrix.png")
 
 
