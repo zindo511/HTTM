@@ -7,7 +7,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-import cv2
+from src.core.shared_stream import SharedVideoStream
 
 app = FastAPI(title="AI Surveillance System")
 
@@ -52,6 +52,7 @@ manager = ConnectionManager()
 global_pipeline = None
 global_capture = None
 global_loop = None
+shared_stream = SharedVideoStream(lambda: global_capture, lambda: global_pipeline)
 
 
 def broadcast_alert_sync(payload: dict):
@@ -95,6 +96,8 @@ async def load_zones_from_db():
     if not global_pipeline:
         return
 
+    shared_stream.start()
+
     existing_ids = {z.get("id") for z in global_pipeline.zones}
 
     for row in global_pipeline.db_service.load_zones():
@@ -123,28 +126,15 @@ async def websocket_alerts_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
 
 
+@app.on_event("shutdown")
+async def stop_shared_stream():
+    shared_stream.stop()
+    if global_capture:
+        global_capture.stop()
+
+
 def generate_mjpeg_stream():
-    """Hàm sinh luồng MJPEG thời gian thực từ camera pipeline"""
-    global global_capture, global_pipeline
-    while True:
-        if not global_capture or not global_pipeline:
-            continue
-
-        item = global_capture.read(timeout=1.0)
-        if item is None:
-            continue
-
-        frame, timestamp = item
-        # Đưa frame qua toàn bộ pipeline phân tích AI
-        annotated_frame = global_pipeline.process_frame(frame, timestamp)
-
-        # Nén JPEG để truyền qua HTTP
-        ret, jpeg = cv2.imencode(".jpg", annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-        if not ret:
-            continue
-
-        yield (b"--frame\r\n"
-               b"Content-Type: image/jpeg\r\n\r\n" + jpeg.tobytes() + b"\r\n")
+    return shared_stream.subscribe()
 
 
 @app.get("/video_feed")
@@ -165,7 +155,7 @@ async def add_zone(request: Request):
         global_pipeline.db_service.save_zone(
             zone_id=data.get("id"),
             zone_name=data.get("name"),
-            zone_type=data.get("type", "RESTRICTED_INTRUSION"),
+            zone_type=data.get("type", "LOITERING_ZONE"),
             polygon_points=data.get("polygon", [])
         )
     return {"status": "success", "zones": global_pipeline.zones if global_pipeline else []}

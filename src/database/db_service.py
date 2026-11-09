@@ -101,7 +101,7 @@ class DatabaseService:
         """Số cảnh báo theo từng loại hành vi (dùng cho thanh footer trên web)"""
         with self._count_lock:
             counts = dict(self._event_counts)
-        for event_type in ("INTRUSION", "LOITERING", "RUNNING", "FALLING"):
+        for event_type in ("LOITERING", "RUNNING", "FALLING", "FIGHTING"):
             counts.setdefault(event_type, 0)
         return counts
 

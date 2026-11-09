@@ -1,0 +1,109 @@
+[
+  {
+    "video": "fight1.mp4",
+    "frames_processed": 234,
+    "source_fps": 25.0,
+    "stride": 2,
+    "elapsed_seconds": 27.38,
+    "events": [
+      {
+        "event_type": "FIGHTING",
+        "track_id": 1,
+        "confidence": 0.99,
+        "extra_info": "Ẩu đả khẩn cấp! ID #1 & #2 đang đánh nhau, vung tay quyết liệt (V=4.2 BH/s)",
+        "seconds": 0.48
+      }
+    ],
+    "state_transitions": [
+      {
+        "seconds": 0.32,
+        "states": {
+          "1": "FIGHTING_SUSPECT",
+          "2": "FIGHTING_SUSPECT"
+        }
+      },
+      {
+        "seconds": 0.4,
+        "states": {
+          "1": "FIGHTING_SUSPECT",
+          "2": "FIGHTING_SUSPECT",
+          "3": "FIGHTING_SUSPECT"
+        }
+      },
+      {
+        "seconds": 0.48,
+        "states": {
+          "1": "FIGHTING_ALERT",
+          "2": "FIGHTING_ALERT"
+        }
+      },
+      {
+        "seconds": 0.56,
+        "states": {
+          "2": "FIGHTING_ALERT"
+        }
+      },
+      {
+        "seconds": 0.64,
+        "states": {}
+      },
+      {
+        "seconds": 1.2,
+        "states": {
+          "3": "FIGHTING_SUSPECT",
+          "5": "FIGHTING_SUSPECT"
+        }
+      },
+      {
+        "seconds": 1.44,
+        "states": {}
+      },
+      {
+        "seconds": 12.4,
+        "states": {
+          "3": "FIGHTING_SUSPECT",
+          "17": "FIGHTING_SUSPECT"
+        }
+      },
+      {
+        "seconds": 12.56,
+        "states": {}
+      },
+      {
+        "seconds": 16.8,
+        "states": {
+          "17": "FIGHTING_SUSPECT",
+          "20": "FIGHTING_SUSPECT"
+        }
+      },
+      {
+        "seconds": 16.88,
+        "states": {}
+      }
+    ]
+  },
+  {
+    "video": "fall_sample.mp4",
+    "frames_processed": 136,
+    "source_fps": 23.98,
+    "stride": 2,
+    "elapsed_seconds": 20.86,
+    "events": [
+      {
+        "event_type": "FALLING",
+        "track_id": 1,
+        "confidence": 0.9,
+        "extra_info": "Temporal FSM verified",
+        "seconds": 5.088
+      }
+    ],
+    "state_transitions": [
+      {
+        "seconds": 5.088,
+        "states": {
+          "1": "FALLING_ALERT"
+        }
+      }
+    ]
+  }
+]
