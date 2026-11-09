@@ -1,0 +1,40 @@
+[
+  {
+    "video": "fight1.mp4",
+    "passed": true,
+    "expected": [
+      "FIGHTING"
+    ],
+    "actual": [
+      "FIGHTING"
+    ]
+  },
+  {
+    "video": "fall_sample.mp4",
+    "passed": true,
+    "expected": [
+      "FALLING"
+    ],
+    "actual": [
+      "FALLING"
+    ]
+  },
+  {
+    "video": "01_video.mp4",
+    "passed": true,
+    "expected": [],
+    "actual": []
+  },
+  {
+    "video": "02_video.mp4",
+    "passed": true,
+    "expected": [],
+    "actual": []
+  },
+  {
+    "video": "people_walking.mp4",
+    "passed": true,
+    "expected": [],
+    "actual": []
+  }
+]

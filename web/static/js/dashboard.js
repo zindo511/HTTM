@@ -2,7 +2,7 @@
 const alertFeed = document.getElementById("alertFeed");
 const alertCountEl = document.getElementById("alertCount");
 let totalAlerts = 0;
-const alertCountsByType = { INTRUSION: 0, LOITERING: 0, RUNNING: 0, FALLING: 0 };
+const alertCountsByType = { LOITERING: 0, RUNNING: 0, FALLING: 0, FIGHTING: 0 };
 
 // WebSocket có tự động kết nối lại.
 let ws = null;
@@ -35,8 +35,10 @@ function connectAlertSocket() {
         try {
             const data = JSON.parse(event.data);
             addAlertCard(data);
+            showLiveBanner(data);
             incrementAlertCounters(data.event_type);
-            playBeepSound();
+            playBeepSound(data.event_type);
+            speakAlertCallout(data);
         } catch (error) {
             console.error(
                 "[WS] Không hiển thị được cảnh báo:",
@@ -87,24 +89,51 @@ function addAlertCard(data) {
     card.className = `alert-card ${data.event_type}`;
     
     let icon = "⚠️";
-    if (data.event_type === "INTRUSION") icon = "🚫";
     if (data.event_type === "LOITERING") icon = "⏳";
     if (data.event_type === "FALLING") icon = "🚨";
     if (data.event_type === "RUNNING") icon = "🏃";
+    if (data.event_type === "FIGHTING") icon = "🥊";
+    const vnTitleMap = { LOITERING: "LẢNG VẢNG", RUNNING: "CHẠY BỨT TỐC", FALLING: "TÉ NGÃ", FIGHTING: "ẨU ĐẢ / ĐÁNH NHAU" };
+    const vnTitle = vnTitleMap[data.event_type] || data.event_type;
 
     card.innerHTML = `
         <img class="alert-thumb" src="${data.snapshot_url}" alt="Snapshot" onerror="this.src='/static/placeholder.png'">
         <div class="alert-info">
             <div class="alert-title">
-                <span>${icon} ${data.event_type} (Track #${data.track_id})</span>
+                <span>${icon} ${vnTitle} (ID #${data.track_id})</span>
                 <span style="font-size: 0.75rem; color: #38bdf8;">${data.confidence}%</span>
             </div>
             <div class="alert-time">${data.timestamp} | Vùng: ${data.zone_id}</div>
-            <div class="alert-desc">${data.extra_info || ""}</div>
+            <div class="alert-desc" style="color: #fde047; font-weight: 600;">${data.extra_info || ("Phát hiện hành vi " + vnTitle)}</div>
         </div>
     `;
 
+    // Bấm vào thẻ cảnh báo để xem ảnh snapshot phóng to
+    card.style.cursor = "pointer";
+    card.title = "Bấm để xem ảnh sự kiện";
+    card.addEventListener("click", () => openSnapshotModal(data, icon));
+
     alertFeed.insertBefore(card, alertFeed.firstChild);
+}
+
+// Hộp thoại xem lại ảnh snapshot của cảnh báo
+function openSnapshotModal(data, icon) {
+    const overlay = document.createElement("div");
+    overlay.className = "snapshot-modal";
+    overlay.innerHTML = `
+        <div class="snapshot-modal-box">
+            <img src="${data.snapshot_url}" alt="Snapshot" onerror="this.src='/static/placeholder.png'">
+            <div class="snapshot-modal-info">
+                <b>${icon} ${data.event_type}</b> (Track #${data.track_id}) | ${data.timestamp} | Vùng: ${data.zone_id || "N/A"}
+                <div>${data.extra_info || ""}</div>
+            </div>
+        </div>
+    `;
+    const close = () => { overlay.remove(); document.removeEventListener("keydown", onKey); };
+    const onKey = (e) => { if (e.key === "Escape") close(); };
+    overlay.addEventListener("click", close);
+    document.addEventListener("keydown", onKey);
+    document.body.appendChild(overlay);
 }
 
 // Nạp lại lịch sử cảnh báo và bộ đếm từ SQLite khi tải (F5) trang
@@ -133,20 +162,77 @@ async function loadAlertHistory() {
 // Không dùng window.onload: thẻ <img> MJPEG stream không bao giờ tải xong nên sự kiện load không bao giờ xảy ra
 loadAlertHistory();
 
-function playBeepSound() {
+let bannerTimer = null;
+function showLiveBanner(data) {
+    const banner = document.getElementById("liveAlertBanner");
+    if (!banner) return;
+    const vnTitleMap = { LOITERING: "LẢNG VẢNG", RUNNING: "CHẠY BỨT TỐC", FALLING: "TÉ NGÃ KHẨN CẤP", FIGHTING: "ẨU ĐẢ / XÔ XÁT" };
+    const title = vnTitleMap[data.event_type] || data.event_type;
+    banner.innerHTML = `🚨 CẢNH BÁO ${title}: ${data.extra_info || ("Đối tượng ID #" + data.track_id)}`;
+    banner.style.display = "block";
+    clearTimeout(bannerTimer);
+    bannerTimer = setTimeout(() => { banner.style.display = "none"; }, 4000);
+}
+function playBeepSound(eventType) {
     try {
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.frequency.value = 880;
-        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
-        osc.start();
-        osc.stop(audioCtx.currentTime + 0.3);
+        const isUrgent = (eventType === "FIGHTING" || eventType === "FALLING");
+        const freqs = isUrgent ? [960, 720, 960] : [880];
+        freqs.forEach((freq, idx) => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = isUrgent ? "sawtooth" : "sine";
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            const t0 = audioCtx.currentTime + idx * 0.14;
+            osc.frequency.setValueAtTime(freq, t0);
+            gain.gain.setValueAtTime(0.22, t0);
+            gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.13);
+            osc.start(t0);
+            osc.stop(t0 + 0.13);
+        });
     } catch (e) {
         // Trình duyệt có thể chặn autoplay
+    }
+}
+
+// Hô hào cảnh báo trực tiếp bằng giọng nói tiếng Việt như người giám sát thật (Web Speech API)
+let lastSpeechTime = 0;
+function speakAlertCallout(data) {
+    try {
+        if (!("speechSynthesis" in window)) return;
+        const now = Date.now();
+        // Tránh đọc chồng chéo quá dày (cách nhau tối thiểu 2.5s, ưu tiên FIGHTING & FALLING)
+        const isCritical = (data.event_type === "FIGHTING" || data.event_type === "FALLING");
+        if (!isCritical && (now - lastSpeechTime < 3500)) return;
+        if (isCritical && (now - lastSpeechTime < 2200)) return;
+
+        let text = "";
+        if (data.event_type === "FIGHTING") {
+            text = data.extra_info
+                ? `Cảnh báo khẩn cấp! ${data.extra_info.replace(/\(V=.*?\)/g, "").replace(/#/g, "số ")}`
+                : "Cảnh báo khẩn cấp! Phát hiện có người đang đánh nhau, xô xát mạnh!";
+        } else if (data.event_type === "FALLING") {
+            text = `Cảnh báo khẩn cấp! Phát hiện người số ${data.track_id} bị ngã nằm trên sàn!`;
+        } else if (data.event_type === "RUNNING") {
+            text = `Chú ý! Phát hiện đối tượng số ${data.track_id} đang chạy bứt tốc!`;
+        } else if (data.event_type === "LOITERING") {
+            text = `Chú ý! Có người đang lảng vảng bất thường trong khu vực giám sát!`;
+        }
+        if (!text) return;
+
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = "vi-VN";
+        utter.rate = 1.15;
+        utter.pitch = isCritical ? 1.1 : 1.0;
+        const voices = window.speechSynthesis.getVoices();
+        const viVoice = voices.find(v => v.lang && v.lang.toLowerCase().includes("vi"));
+        if (viVoice) utter.voice = viVoice;
+        window.speechSynthesis.speak(utter);
+        lastSpeechTime = now;
+    } catch (e) {
+        console.warn("Speech synthesis error:", e);
     }
 }
 
@@ -183,10 +269,25 @@ function toggleDrawROI() {
     }
 }
 
+// Vùng ảnh video thực sự hiển thị (ảnh dùng object-fit: contain nên có viền đen thừa quanh ảnh)
+function getVideoRect() {
+    const box = videoStream.getBoundingClientRect();
+    const fs = getFrameSize();
+    const scale = Math.min(box.width / fs.width, box.height / fs.height);
+    const w = fs.width * scale;
+    const h = fs.height * scale;
+    return {
+        left: box.left + (box.width - w) / 2,
+        top: box.top + (box.height - h) / 2,
+        width: w,
+        height: h
+    };
+}
+
 // Phủ canvas khít lên vùng ảnh video thực (ảnh được căn giữa trong khung đen nên không trùng khung bao)
 function syncCanvasToVideo() {
     const wrapperRect = videoStream.parentElement.getBoundingClientRect();
-    const videoRect = videoStream.getBoundingClientRect();
+    const videoRect = getVideoRect();
     canvas.style.left = `${videoRect.left - wrapperRect.left}px`;
     canvas.style.top = `${videoRect.top - wrapperRect.top}px`;
     canvas.style.width = `${videoRect.width}px`;
@@ -203,7 +304,7 @@ window.addEventListener("resize", () => {
 canvas.addEventListener("click", (e) => {
     if (!isDrawing) return;
     // Tính theo khung ảnh video để không phụ thuộc vị trí canvas
-    const rect = videoStream.getBoundingClientRect();
+    const rect = getVideoRect();
     const frameSize = getFrameSize();
     const x = (e.clientX - rect.left) * frameSize.width / rect.width;
     const y = (e.clientY - rect.top) * frameSize.height / rect.height;

@@ -2,30 +2,27 @@ import math
 from typing import Dict, Any, List, Optional
 import numpy as np
 from src.behaviors.base import BaseBehaviorDetector
+from src.behaviors.fall_fsm import FallFSMMixin
 from src.tracking.track_manager import TrackHistory
-from src.utils.geometry import calculate_aspect_ratio, calculate_torso_angle, normalize_skeleton_root_relative
+from src.utils.geometry import calculate_torso_angle
 
 
-class MotionAndFallDetector(BaseBehaviorDetector):
-    """
-    Module 3: Phát hiện Chạy bứt tốc (Running) và Té ngã (Falling).
-    - Chạy: Đo vận tốc chuẩn hóa V_norm (BH/s) và độ đổ người về phía trước.
-    - Ngã: Kiến trúc 2 tầng:
-      + Tier 1: Bộ lọc hình thái (AR <= 0.8, góc trục thân theta < 40°, tốc độ rơi Vy).
-      + Tier 2: Gọi mạng Bi-LSTM thẩm định chuỗi thời gian 30 frames (chống nhầm cúi/ngồi).
-    """
+class MotionAndFallDetector(FallFSMMixin, BaseBehaviorDetector):
+    """Running kinematics and temporal fall FSM with optional Bi-LSTM verification."""
     def __init__(self, config_run: Dict[str, Any], config_fall: Dict[str, Any], bilstm_model=None, alert_manager=None):
         super().__init__(config_fall, alert_manager)
         self.config_run = config_run
         self.config_fall = config_fall
         self.bilstm_model = bilstm_model
-        
+
         # Ngưỡng chạy
         self.v_norm_thresh = self.config_run.get("v_norm_threshold", 1.5)
         self.body_lean_min = self.config_run.get("body_lean_min", 15.0)
         self.cooldown_run = self.config_run.get("cooldown_seconds", 4.0)
-        
-        # Ngưỡng ngã
+        self.run_window = self.config_run.get("window_seconds", 0.5)
+        self.run_confirm_frames = self.config_run.get("confirm_frames", 3)
+
+        # Ngưỡng ngã (3-Phase FSM)
         self.ar_max = self.config_fall.get("aspect_ratio_max", 0.8)
         self.angle_max = self.config_fall.get("torso_angle_max", 40.0)
         self.vy_drop_min = self.config_fall.get("v_y_drop_min", 0.8)
@@ -33,103 +30,103 @@ class MotionAndFallDetector(BaseBehaviorDetector):
         self.cooldown_fall = self.config_fall.get("cooldown_seconds", 15.0)
 
     def process(
-        self, 
-        track: TrackHistory, 
-        current_time: float, 
-        frame: np.ndarray, 
+        self,
+        track: TrackHistory,
+        current_time: float,
+        frame: np.ndarray,
         zones: List[Dict[str, Any]]
     ):
-        if track.current_state in ("RUNNING_ALERT", "FALLING_ALERT"):
-            track.current_state = "NORMAL"
-        if (len(track.bbox_history) < 5 or len(track.timestamp_history) < 5
-                or len(track.keypoints_history) == 0):
-            return
+        track.debug_metrics = {}
 
-        current_bbox = track.bbox_history[-1]
-        x1, y1, x2, y2 = current_bbox
-        current_height = max(1.0, y2 - y1)
-        kpts = track.keypoints_history[-1]
-        if kpts.ndim != 2 or kpts.shape[0] < 13 or kpts.shape[1] < 2:
+        # Chỉ reset trạng thái RUNNING_ALERT; còn FALLING_ALERT do FSM Pha 3 (FALL_LATCHED) quản lý
+        if track.current_state == "RUNNING_ALERT":
+            track.current_state = "NORMAL"
+
+        if not track.bbox_history or not track.timestamp_history:
             return
-        shoulder_pt = tuple((kpts[5, :2] + kpts[6, :2]) / 2.0)
-        hip_pt = tuple((kpts[11, :2] + kpts[12, :2]) / 2.0)
-        torso_angle = calculate_torso_angle(shoulder_pt, hip_pt)
-        body_lean = 90.0 - torso_angle
-        dt = track.timestamp_history[-1] - track.timestamp_history[-5]
-        if not math.isfinite(dt) or dt <= 0:
-            return
+        kpts = (track.keypoints_history[-1] if track.keypoints_history
+                and track.missing_kpts_count == 0 else None)
+        shoulder = self._midpoint(kpts, 5, 6)
+        hip = self._midpoint(kpts, 11, 12)
+        angle = (calculate_torso_angle(shoulder, hip)
+                 if shoulder is not None and hip is not None else None)
+        body_lean = 90.0 - angle if angle is not None else 0.0
+        if self.config_fall.get("enabled", True):
+            self._process_fall(track, current_time, frame, angle, hip)
+            if track.fall_phase != "NORMAL":
+                track.run_streak = 0
+                return
+        else:
+            self._reset_fall(track)
 
         # ---------------------------------------------------------
         # 1. KIỂM TRA HÀNH VI CHẠY (RUNNING KINEMATICS)
         # ---------------------------------------------------------
-        if self.config_run.get("enabled", True):
-            # Tính vận tốc chuẩn hóa trong cửa sổ trượt 5 frames (~0.16s)
-            prev_bbox = track.bbox_history[-5]
-            prev_foot = ((prev_bbox[0] + prev_bbox[2]) / 2.0, prev_bbox[3])
-            curr_foot = ((x1 + x2) / 2.0, y2)
-            
-            dist_px = math.hypot(curr_foot[0] - prev_foot[0], curr_foot[1] - prev_foot[1])
-            v_norm = dist_px / (dt * current_height)  # Đơn vị: Body Heights / second
+        # Không xét chạy nếu đối tượng đang bị khóa cảnh báo ngã (FALL_LATCHED)
+        if self.config_run.get("enabled", True) and track.fall_phase != "FALL_LATCHED":
+            v_norm = self._compute_run_speed(track)
+            streak = getattr(track, "run_streak", 0)
 
-            if v_norm >= self.v_norm_thresh and body_lean >= self.body_lean_min:
-                track.current_state = "RUNNING_ALERT"
-                if track.can_trigger_alert("RUNNING", current_time, self.cooldown_run):
-                    if self.alert_manager:
-                        self.alert_manager.trigger_alert(
-                            event_type="RUNNING",
-                            track_id=track.track_id,
-                            frame=frame,
-                            confidence=min(1.0, v_norm / 2.5),
-                            extra_info=f"Vận tốc: {v_norm:.1f} BH/s"
-                        )
-                return
+            if v_norm is None:
+                track.run_streak = 0
+            else:
+                track.debug_metrics["V"] = (f"V={v_norm:.2f} (>={self.v_norm_thresh})", v_norm >= self.v_norm_thresh)
+                track.debug_metrics["Lean"] = (f"Lean={body_lean:.0f} (>={self.body_lean_min:.0f})", body_lean >= self.body_lean_min)
 
-        # ---------------------------------------------------------
-        # 2. KIỂM TRA HÀNH VI TÉ NGÃ (FALLING DETECTION - 2 TIERS)
-        # ---------------------------------------------------------
-        if self.config_fall.get("enabled", True):
-            # TIER 1: FAST RULE-BASED GATEKEEPER
-            ar = calculate_aspect_ratio(current_bbox)
-            
-            # Tính góc trục thân theta (giữa vai và hông)
-            # COCO Keypoints: 5=Left Shoulder, 6=Right Shoulder, 11=Left Hip, 12=Right Hip
-            shoulder_pt = ((kpts[5, 0] + kpts[6, 0]) / 2.0, (kpts[5, 1] + kpts[6, 1]) / 2.0)
-            hip_pt = ((kpts[11, 0] + kpts[12, 0]) / 2.0, (kpts[11, 1] + kpts[12, 1]) / 2.0)
-            torso_angle = calculate_torso_angle(shoulder_pt, hip_pt)
-            
-            # Kiểm tra xem có dấu hiệu sụp đổ tư thế hay không
-            prev_bbox = track.bbox_history[-5]
-            prev_center_y = (prev_bbox[1] + prev_bbox[3]) / 2.0
-            center_y = (y1 + y2) / 2.0
-            vy_drop = (center_y - prev_center_y) / (dt * current_height)
-            is_tier1_triggered = ((ar <= self.ar_max or torso_angle <= self.angle_max)
-                                  and vy_drop >= self.vy_drop_min)
-            
-            if is_tier1_triggered:
-                # TIER 2: DEEP BI-LSTM VERIFIER (Nếu có nạp model)
-                if self.bilstm_model is not None and len(track.keypoints_history) >= 30:
-                    # Lấy cửa sổ 30 frames gần nhất và chuẩn hóa Root-Relative
-                    seq_features = []
-                    hist_slice = list(track.keypoints_history)[-30:]
-                    bbox_slice = list(track.keypoint_bbox_history)[-30:]
-                    
-                    for k_frame, b_frame in zip(hist_slice, bbox_slice):
-                        norm_vec = normalize_skeleton_root_relative(k_frame, b_frame)
-                        seq_features.append(norm_vec)
-                    
-                    # Nạp vào mạng Bi-LSTM (Input shape: 1, 30, 34)
-                    features_arr = np.expand_dims(np.array(seq_features, dtype=np.float32), axis=0)
-                    prob_normal, prob_running, prob_fall = self.bilstm_model.predict(features_arr)
-                    
-                    if prob_fall >= self.bilstm_fall_thresh:
-                        self._trigger_fall_alert(track, current_time, frame, prob_fall, "Tier 2 Verified")
-                    else:
-                        # Bác bỏ báo động giả (người cúi nhặt đồ hoặc ngồi bệt)
-                        if track.current_state == "FALLING_ALERT":
-                            track.current_state = "NORMAL"
-                else:
-                    # Nếu chưa gắn Bi-LSTM model: Dùng Heuristic của Tier 1 để cảnh báo trực tiếp
-                    self._trigger_fall_alert(track, current_time, frame, 0.9, f"Tier 1 (AR={ar:.2f}, θ={torso_angle:.1f}°)")
+                is_fast = v_norm >= self.v_norm_thresh and (
+                    body_lean >= self.body_lean_min or v_norm >= self.v_norm_thresh * 1.5
+                )
+                track.run_streak = streak + 1 if is_fast else 0
+                track.debug_metrics["Run"] = (f"RunFrames={track.run_streak}/{self.run_confirm_frames}", is_fast)
+
+                if track.run_streak >= self.run_confirm_frames:
+                    track.current_state = "RUNNING_ALERT"
+                    if track.can_trigger_alert("RUNNING", current_time, self.cooldown_run):
+                        if self.alert_manager:
+                            self.alert_manager.trigger_alert(
+                                event_type="RUNNING",
+                                track_id=track.track_id,
+                                frame=frame,
+                                confidence=min(1.0, v_norm / 2.5),
+                                extra_info=f"Chạy bứt tốc: {v_norm:.1f} BH/s"
+                            )
+                    return
+
+    def _compute_run_speed(self, track: TrackHistory) -> Optional[float]:
+        """
+        Vận tốc chuẩn hóa V_norm (Body Height / giây) trên cửa sổ thời gian `run_window` giây.
+        """
+        n = min(len(track.timestamp_history), len(track.bbox_history))
+        if n < 4:
+            return None
+        ts = list(track.timestamp_history)[-n:]
+        bb = list(track.bbox_history)[-n:]
+        t_now = ts[-1]
+
+        j = None
+        for i in range(n - 1, -1, -1):
+            if t_now - ts[i] >= self.run_window:
+                j = i
+                break
+        if j is None:
+            return None
+
+        def mean_center(lo, hi):
+            lo, hi = max(0, lo), min(n, hi)
+            cx = sum((b[0] + b[2]) / 2.0 for b in bb[lo:hi]) / (hi - lo)
+            cy = sum((b[1] + b[3]) / 2.0 for b in bb[lo:hi]) / (hi - lo)
+            t = sum(ts[lo:hi]) / (hi - lo)
+            return cx, cy, t
+
+        old_x, old_y, old_t = mean_center(j - 1, j + 2)
+        new_x, new_y, new_t = mean_center(n - 3, n)
+        dt = new_t - old_t
+        if not math.isfinite(dt) or dt <= 0:
+            return None
+
+        heights = sorted(max(1.0, b[3] - b[1]) for b in bb[j:])
+        ref_height = heights[len(heights) // 2]
+        return math.hypot(new_x - old_x, new_y - old_y) / (dt * ref_height)
 
     def _trigger_fall_alert(self, track: TrackHistory, current_time: float, frame: np.ndarray, conf: float, detail: str):
         track.current_state = "FALLING_ALERT"

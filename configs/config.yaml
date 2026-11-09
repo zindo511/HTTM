@@ -8,6 +8,7 @@ system:
   model_pose_path: "weights/yolov8n-pose.pt"
   model_bilstm_path: "weights/fall_bilstm.pt"
   enable_bilstm_tier2: false # Bật true khi đã có file fall_bilstm.pt
+  debug_overlay: true        # Hiện số đo chẩn đoán (AR, góc thân, Vy, V) cạnh khung người, đặt false để tắt
 
 camera:
   source: "data/test_videos/people_walking.mp4" # Mặc định dùng video test người đi lại, đổi 0 nếu muốn dùng Webcam
@@ -17,6 +18,8 @@ camera:
   buffer_size: 2            # Kích thước Drop-Oldest Queue (1-2) chống lag luồng RTSP
 
 tracking:
+  max_missing_kpts: 5       # Forward-fill toi da 5 frame
+  max_fill_seconds: 0.25   # Dong thoi gioi han tuoi pose, tranh du lieu cu khi FPS thap
   tracker_type: "bytetrack"
   track_thresh: 0.45
   track_buffer: 30          # Số frame lưu vết khi mất dấu (LOST state)
@@ -25,11 +28,6 @@ tracking:
   track_ttl: 5.0            # Xóa sạch dữ liệu track nếu mất dấu quá 5 giây
 
 behaviors:
-  intrusion:
-    enabled: true
-    min_confirm_frames: 5   # Yêu cầu chân nằm trong ROI liên tục 5 frames (chống nhiễu)
-    cooldown_seconds: 5.0   # Chống spam chuông xâm nhập
-  
   loitering:
     enabled: true
     threshold_seconds: 10.0 # Quá 10 giây tính là lảng vảng
@@ -39,23 +37,49 @@ behaviors:
   running:
     enabled: true
     v_norm_threshold: 1.5   # Vận tốc gấp 1.5 lần chiều cao cơ thể / giây (BH/s)
-    body_lean_min: 15.0     # Độ đổ người nghiêng đi tối thiểu (độ)
+    body_lean_min: 15.0     # Độ đổ người nghiêng đi tối thiểu (độ), bỏ qua nếu V >= 1.5 lần ngưỡng
+    window_seconds: 0.5     # Cửa sổ thời gian đo vận tốc (giây), không phụ thuộc FPS
+    confirm_frames: 3       # Số lần đo liên tiếp vượt ngưỡng mới báo (lọc nhiễu)
     cooldown_seconds: 4.0
 
   falling:
     enabled: true
     aspect_ratio_max: 0.8   # Tỷ lệ H/W <= 0.8 (chuyển sang nằm ngang)
     torso_angle_max: 40.0   # Góc trục thân so với mặt đất < 40 độ
-    v_y_drop_min: 0.8       # Gia tốc rơi thẳng đứng
+    v_y_drop_min: 0.8       # Van toc roi / chieu cao dung (BH/s)
+    keypoint_confidence: 0.3
+    impact_window_seconds: 1.2
+    lying_seconds: 0.5
+    recovery_seconds: 0.5
+    impact_height_ratio: 0.65
+    lying_height_ratio: 0.55
+    top_drop_min: 1.0       # Toc do ha dinh bbox (BH/s), di kem sut chieu cao
+    velocity_window_seconds: 0.2
+    reference_window_seconds: 1.5
+    reference_warmup_seconds: 0.3
+    standing_aspect_ratio: 1.3
+    recovery_aspect_ratio: 1.2
+    recovery_height_ratio: 0.8
+    max_observation_gap: 0.3
     bilstm_fall_threshold: 0.85 # Xác suất Tier 2 để khẳng định ngã thật
     cooldown_seconds: 15.0
 
+  fighting:
+    enabled: true
+    max_distance_bh: 1.15        # Khoảng cách tâm tối đa giữa 2 người (theo chiều cao cơ thể BH)
+    max_height_ratio: 2.0       # Lọc người tiền cảnh/hậu cảnh chồng lên nhau trong ảnh
+    limb_speed_threshold: 2.1   # Vận tốc vung tay/chân tối thiểu khi ra đòn (BH/s)
+    hold_seconds: 1.5          # Giữ cảnh báo khi tín hiệu xô xát tạm mất
+    confirm_frames: 4           # Số frame liên tiếp xác nhận xô xát
+    confirm_seconds: 0.15       # Xác nhận theo thời gian, ổn định khi FPS AI thay đổi
+    cooldown_seconds: 6.0       # Thời gian chờ giữa 2 lần báo động ẩu đả
+
 zones:
   - id: "ZONE_01"
-    name: "Vùng cấm kho tài liệu"
-    type: "RESTRICTED_INTRUSION" # RESTRICTED_INTRUSION hoặc LOITERING_ZONE
+    name: "Vùng giám sát lảng vảng"
+    type: "LOITERING_ZONE"
     polygon: [[100, 150], [600, 150], [600, 600], [100, 600]]
-    color: [0, 0, 255]      # Đỏ (BGR)
+    color: [0, 255, 255]    # Vàng (BGR)
 
 web:
   host: "0.0.0.0"

@@ -25,7 +25,7 @@ def load_config(config_path: str = "configs/config.yaml") -> dict:
 def main():
     print("=" * 70)
     print("   HỆ THỐNG TRINH SÁT AN NINH THỜI GIAN THỰC (AI SURVEILLANCE)")
-    print("   Phát hiện 3 hành vi bất thường: Xâm nhập | Lảng vảng | Chạy / Té ngã")
+    print("   Phát hiện hành vi bất thường: Lảng vảng | Chạy / Té ngã")
     print("=" * 70)
 
     # 1. Tải cấu hình

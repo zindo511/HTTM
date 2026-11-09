@@ -1,0 +1,35 @@
+[
+  {
+    "video": "fall_sample.mp4",
+    "fps": 23.98,
+    "frames": 272,
+    "seconds": 11.34,
+    "alerts": [
+      {
+        "track": 1,
+        "seconds": 5.046
+      }
+    ]
+  },
+  {
+    "video": "01_video.mp4",
+    "fps": 32.0,
+    "frames": 1439,
+    "seconds": 44.97,
+    "alerts": []
+  },
+  {
+    "video": "02_video.mp4",
+    "fps": 32.0,
+    "frames": 1211,
+    "seconds": 37.84,
+    "alerts": []
+  },
+  {
+    "video": "people_walking.mp4",
+    "fps": 12.0,
+    "frames": 596,
+    "seconds": 49.67,
+    "alerts": []
+  }
+]

@@ -18,6 +18,8 @@ class LoiteringDetector(BaseBehaviorDetector):
         self.threshold_seconds = self.config.get("threshold_seconds", 10.0)
         self.max_radius = self.config.get("max_radius_pixels", 60.0)
         self.cooldown = self.config.get("cooldown_seconds", 10.0)
+        # Số pixel cách mép dưới khung hình để coi là "bbox bị cắt ở mép dưới" (chân bị khuất)
+        self.bottom_edge_margin = self.config.get("bottom_edge_margin", 5)
 
     def process(
         self, 
@@ -29,7 +31,20 @@ class LoiteringDetector(BaseBehaviorDetector):
         if not self.enabled or len(track.foot_positions) == 0:
             return
 
+        # Nếu đối tượng đang trong trạng thái khẩn cấp cao hơn (Ẩu đả, Té ngã, Chạy),
+        # không tính là lảng vảng đứng yên thông thường
+        if track.current_state in ("FIGHTING_SUSPECT", "FIGHTING_ALERT", "FALLING_ALERT", "RUNNING_ALERT"):
+            track.zone_entry_time = current_time
+            return
+
         current_foot = track.foot_positions[-1]
+
+        # Nếu người bị cắt ở mép dưới khung hình thì chân không nhìn thấy,
+        # đáy bbox không phải vị trí chân thật -> chuyển sang xét tâm khung người.
+        if len(track.bbox_history) > 0 and frame is not None:
+            x1, y1, x2, y2 = track.bbox_history[-1]
+            if y2 >= frame.shape[0] - self.bottom_edge_margin:
+                current_foot = ((x1 + x2) / 2.0, (y1 + y2) / 2.0)
         is_inside_loiter_zone = False
 
         for zone in zones:
