@@ -26,7 +26,6 @@ class AlertManager:
         
         # Ngưỡng cooldown mặc định theo từng loại sự kiện (giây)
         self.default_cooldowns: Dict[str, float] = {
-            "LOITERING": 10.0,
             "RUNNING": 4.0,
             "FALLING": 15.0,
             "FIGHTING": 6.0

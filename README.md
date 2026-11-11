@@ -2,8 +2,6 @@
 
 Hệ thống giám sát camera dùng thị giác máy tính để tự động phát hiện 3 hành vi bất thường theo thời gian thực: **Chạy nhanh (Running)**, **Té ngã (Falling)** và **Đánh nhau (Fighting)**.
 
-Ngoài ra còn một tính năng phụ, không thuộc phạm vi chính: **Lảng vảng (Loitering)** trong vùng do người dùng vẽ trên giao diện.
-
 ---
 
 ## Trạng thái hiện tại
@@ -37,7 +35,7 @@ Kết quả tự kiểm tra gần nhất: `docs/behavior_self_test.md`.
 
 ```text
 btl-httm/
-├── configs/config.yaml         # Nguồn video, ngưỡng từng hành vi, vùng lảng vảng
+├── configs/config.yaml         # Nguồn video, ngưỡng từng hành vi
 ├── weights/                    # yolov8n-pose.pt, fall_bilstm.pt (không commit)
 ├── data/
 │   ├── test_videos/            # Video thử (không commit)
@@ -46,7 +44,7 @@ btl-httm/
 ├── src/
 │   ├── core/                   # capture, pipeline, alert_manager, shared_stream
 │   ├── tracking/               # TrackHistory, TrackManager
-│   ├── behaviors/              # fall_run, fall_fsm, fighting, loitering
+│   ├── behaviors/              # fall_run, fall_fsm, fighting
 │   ├── models/                 # Bi-LSTM (Tier 2, đang tắt)
 │   ├── database/               # SQLite
 │   └── utils/                  # hình học, vẽ khung

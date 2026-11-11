@@ -7,18 +7,16 @@ import torch
 from ultralytics import YOLO
 
 from src.tracking.track_manager import TrackManager
-from src.behaviors.loitering import LoiteringDetector
 from src.behaviors.fall_run import MotionAndFallDetector
 from src.behaviors.fighting import FightingDetector
 from src.models.bilstm_verifier import BiLSTMInferenceWrapper
 from src.core.alert_manager import AlertManager
 from src.database.db_service import DatabaseService
-from src.utils.geometry import get_foot_point, is_point_in_polygon
+from src.utils.geometry import get_foot_point
 from src.utils.visualizer import (
     draw_bounding_box,
     draw_foot_point,
     draw_skeleton,
-    draw_roi_zones,
     draw_hud,
     draw_debug_metrics,
     draw_fighting_overlay,
@@ -31,7 +29,7 @@ class SurveillancePipeline:
     Nhạc trưởng điều phối toàn bộ hệ thống trinh sát (Core Pipeline):
     - Tầng 1: Đọc frame từ CaptureThread
     - Tầng 2: YOLOv8-Pose + ByteTrack -> Lấy Track ID & 17 khớp xương
-    - Tầng 3: Chạy các module hành vi (Lảng vảng, Chạy, Té ngã, Ẩu đả)
+    - Tầng 3: Chạy các module hành vi (Chạy nhanh, Té ngã, Đánh nhau)
     - Tầng 4: Gọi AlertManager ghi nhận sự kiện & render khung hình
     """
     def __init__(self, config: Dict[str, Any], ws_broadcast_callback=None):
@@ -72,13 +70,11 @@ class SurveillancePipeline:
         # 3. Quản lý bám vết đối tượng (TrackManager)
         self.track_manager = TrackManager(
             track_ttl=self.track_cfg.get("track_ttl", 5.0),
-            exit_grace_period=self.track_cfg.get("grace_period_exit", 2.0),
             max_missing_kpts=self.track_cfg.get("max_missing_kpts", 5),
             max_fill_seconds=self.track_cfg.get("max_fill_seconds", 0.25)
         )
 
         # 4. Các module hành vi nghiệp vụ
-        self.loitering_detector = LoiteringDetector(self.behav_cfg.get("loitering", {}), self.alert_manager)
         self.motion_fall_detector = MotionAndFallDetector(
             config_run=self.behav_cfg.get("running", {}),
             config_fall=self.behav_cfg.get("falling", {}),
@@ -87,17 +83,10 @@ class SurveillancePipeline:
         )
         self.fighting_detector = FightingDetector(self.behav_cfg.get("fighting", {}), self.alert_manager)
 
-        # 5. Danh sách vùng cấm đa giác ROI
-        self.zones = config.get("zones", [])
-
         # Thống kê hiệu năng
         self.total_alerts = 0
         self.last_time = time.time()
         self.fps = 0.0
-
-    def update_zones(self, new_zones: List[Dict[str, Any]]):
-        """Cho phép người dùng cập nhật lại vùng ROI ngay trên giao diện web"""
-        self.zones = new_zones
 
     def request_reset(self):
         """Đánh dấu cần xoá trạng thái bám vết (gọi khi đổi nguồn video, an toàn giữa các luồng)."""
@@ -123,9 +112,6 @@ class SurveillancePipeline:
         self.last_time = timestamp
 
         annotated_frame = frame.copy()
-
-        # Vẽ các vùng cấm ROI lên khung hình trước
-        draw_roi_zones(annotated_frame, self.zones)
 
         # 1. Lan truyền tiến YOLO-Pose + ByteTrack
         results = self.yolo_model.track(
@@ -168,21 +154,17 @@ class SurveillancePipeline:
                 )
 
                 # 3a. Phân tích Chạy & Té ngã
-                self.motion_fall_detector.process(track, current_time, annotated_frame, self.zones)
+                self.motion_fall_detector.process(track, current_time, annotated_frame)
 
                 active_tracks.append(track)
                 track_render_items.append((track, bbox, int(tid), foot_point, kpts))
 
-        # 3b. Phân tích hành vi Ẩu đả / Đánh nhau (ưu tiên cao hơn Lảng vảng)
+        # 3b. Phân tích hành vi Ẩu đả / Đánh nhau
         fight_info = self.fighting_detector.process_all(active_tracks, current_time, annotated_frame)
         # Preserve a latched fall even when the fighting detector changes display state.
         for track in active_tracks:
             if track.fall_phase == "FALL_LATCHED":
                 track.current_state = "FALLING_ALERT"
-
-        # 3c. Phân tích Lảng vảng (chỉ xét các đối tượng không nằm trong trạng thái Ẩu đả/Ngã/Chạy)
-        for track in active_tracks:
-            self.loitering_detector.process(track, current_time, annotated_frame, self.zones)
 
         # 4. Render đồ họa trực quan lên annotated_frame
         for track, bbox, tid, foot_point, kpts in track_render_items:
@@ -192,13 +174,7 @@ class SurveillancePipeline:
 
             if bbox[3] >= frame.shape[0] - 5:
                 foot_point = ((bbox[0] + bbox[2]) / 2.0, (bbox[1] + bbox[3]) / 2.0)
-            is_foot_in_any = False
-            for z in self.zones:
-                poly = np.array(z.get("polygon", []), dtype=np.int32)
-                if is_point_in_polygon(foot_point, poly):
-                    is_foot_in_any = True
-                    break
-            draw_foot_point(annotated_frame, foot_point, is_inside=is_foot_in_any)
+            draw_foot_point(annotated_frame, foot_point)
 
             if kpts is not None:
                 draw_skeleton(annotated_frame, kpts)

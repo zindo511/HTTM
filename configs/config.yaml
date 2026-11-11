@@ -18,16 +18,9 @@ tracking:
   max_missing_kpts: 5       # Forward-fill toi da 5 frame
   max_fill_seconds: 0.25   # Dong thoi gioi han tuoi pose, tranh du lieu cu khi FPS thap
   # ByteTrack dùng tham số mặc định của Ultralytics (bytetrack.yaml)
-  grace_period_exit: 2.0    # Thời gian gia hạn 2 giây chống rung biên ROI & che khuất
   track_ttl: 5.0            # Xóa sạch dữ liệu track nếu mất dấu quá 5 giây
 
 behaviors:
-  loitering:
-    enabled: true
-    threshold_seconds: 10.0 # Quá 10 giây tính là lảng vảng
-    max_radius_pixels: 60.0 # Bán kính di chuyển tối đa trong vùng
-    cooldown_seconds: 10.0  # Chống spam chuông lảng vảng
-
   running:
     enabled: true
     v_norm_threshold: 1.5   # Vận tốc gấp 1.5 lần chiều cao cơ thể / giây (BH/s)
@@ -67,13 +60,6 @@ behaviors:
     confirm_frames: 4           # Số frame liên tiếp xác nhận xô xát
     confirm_seconds: 0.15       # Xác nhận theo thời gian, ổn định khi FPS AI thay đổi
     cooldown_seconds: 6.0       # Thời gian chờ giữa 2 lần báo động ẩu đả
-
-zones:
-  - id: "ZONE_01"
-    name: "Vùng giám sát lảng vảng"
-    type: "LOITERING_ZONE"
-    polygon: [[100, 150], [600, 150], [600, 600], [100, 600]]
-    color: [0, 255, 255]    # Vàng (BGR)
 
 web:
   host: "0.0.0.0"

@@ -1,6 +1,5 @@
 import math
 import numpy as np
-import cv2
 from typing import Tuple, List, Optional
 
 
@@ -11,19 +10,6 @@ def get_foot_point(bbox: Tuple[float, float, float, float]) -> Tuple[float, floa
     """
     x1, y1, x2, y2 = bbox
     return ((x1 + x2) / 2.0, float(y2))
-
-
-def is_point_in_polygon(point: Tuple[float, float], polygon: np.ndarray) -> bool:
-    """
-    Kiểm tra điểm tiếp đất có nằm trong đa giác vùng cấm ROI hay không (Point-in-Polygon).
-    Sử dụng cv2.pointPolygonTest: >= 0 là nằm trong hoặc trên biên đa giác.
-    """
-    if polygon is None or len(polygon) < 3:
-        return False
-    # Đảm bảo định dạng int32 cho cv2.pointPolygonTest
-    pts = np.array(polygon, dtype=np.int32)
-    dist = cv2.pointPolygonTest(pts, (float(point[0]), float(point[1])), False)
-    return dist >= 0
 
 
 def calculate_torso_angle(shoulder_pt: Tuple[float, float], hip_pt: Tuple[float, float]) -> float:
@@ -52,20 +38,6 @@ def calculate_aspect_ratio(bbox: Tuple[float, float, float, float]) -> float:
     w = max(1.0, x2 - x1)
     h = max(1.0, y2 - y1)
     return h / w
-
-
-def calculate_trajectory_displacement(points: List[Tuple[float, float]]) -> float:
-    """
-    Tính bán kính dịch chuyển tối đa so với tâm trung bình của quỹ đạo (Spatial Confinement).
-    Phục vụ nhận diện Lảng vảng (Loitering).
-    """
-    if len(points) < 2:
-        return 0.0
-    
-    arr = np.array(points)
-    center = np.mean(arr, axis=0)
-    distances = np.linalg.norm(arr - center, axis=1)
-    return float(np.max(distances))
 
 
 def normalize_skeleton_root_relative(

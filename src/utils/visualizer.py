@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Tuple
 COLOR_GREEN = (0, 255, 0)       # Normal
 COLOR_RED = (0, 0, 255)         # Fall Alert
 COLOR_ORANGE = (0, 140, 255)     # Running Alert
-COLOR_YELLOW = (0, 255, 255)     # Loitering Alert
+COLOR_YELLOW = (0, 255, 255)     # Fighting Suspect
 COLOR_MAGENTA = (180, 0, 255)    # Fighting Alert
 COLOR_BLUE = (255, 0, 0)
 COLOR_WHITE = (255, 255, 255)
@@ -22,7 +22,6 @@ SKELETON_PAIRS = [
 
 STATE_VN_LABELS = {
     "NORMAL": "BINH THUONG",
-    "LOITERING_ALERT": "LANG VANG",
     "RUNNING_ALERT": "CHAY BUT TOC",
     "FALLING_ALERT": "TE NGA!",
     "FIGHTING_SUSPECT": "NGHI NGO AU DA",
@@ -43,9 +42,6 @@ def draw_bounding_box(frame: np.ndarray, bbox: Tuple[float, float, float, float]
     elif "FIGHT" in state:
         color = COLOR_MAGENTA
         thickness = 3
-    elif "LOITER" in state:
-        color = COLOR_YELLOW
-        thickness = 2
     elif "RUN" in state:
         color = COLOR_ORANGE
         thickness = 2
@@ -62,9 +58,9 @@ def draw_bounding_box(frame: np.ndarray, bbox: Tuple[float, float, float, float]
     cv2.putText(frame, label, (x1 + 5, top_y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLOR_WHITE, 1, cv2.LINE_AA)
 
 
-def draw_foot_point(frame: np.ndarray, foot_point: Tuple[float, float], is_inside: bool = False):
+def draw_foot_point(frame: np.ndarray, foot_point: Tuple[float, float]):
     fx, fy = int(foot_point[0]), int(foot_point[1])
-    color = COLOR_RED if is_inside else COLOR_BLUE
+    color = COLOR_BLUE
     cv2.circle(frame, (fx, fy), 5, color, -1)
     cv2.circle(frame, (fx, fy), 8, color, 1)
 
@@ -191,29 +187,6 @@ def draw_fighting_overlay(frame: np.ndarray, fight_info: Dict[str, Any]):
         thickness,
         cv2.LINE_AA
     )
-
-
-def draw_roi_zones(frame: np.ndarray, zones: List[Dict[str, Any]]):
-    """
-    Vẽ các vùng cấm hoặc vùng giám sát đa giác lên khung hình.
-    """
-    overlay = frame.copy()
-    
-    for zone in zones:
-        polygon = np.array(zone.get("polygon", []), dtype=np.int32)
-        if len(polygon) < 3:
-            continue
-            
-        color = COLOR_YELLOW
-        name = zone.get("name", zone.get("id", "Zone"))
-        
-        cv2.fillPoly(overlay, [polygon], color)
-        cv2.polylines(frame, [polygon], isClosed=True, color=color, thickness=2)
-        
-        top_pt = polygon[0]
-        cv2.putText(frame, f"[ROI] {name}", (top_pt[0], top_pt[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-
-    cv2.addWeighted(overlay, 0.25, frame, 0.75, 0, frame)
 
 
 def draw_hud(frame: np.ndarray, fps: float, active_tracks: int, alerts_count: int):

@@ -34,7 +34,7 @@ class MotionAndFallDetector(FallFSMMixin, BaseBehaviorDetector):
         track: TrackHistory,
         current_time: float,
         frame: np.ndarray,
-        zones: List[Dict[str, Any]]
+        zones: Optional[List[Dict[str, Any]]] = None  # không dùng, giữ để tương thích
     ):
         track.debug_metrics = {}
 

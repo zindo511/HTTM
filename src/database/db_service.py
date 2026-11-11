@@ -1,6 +1,5 @@
 import sqlite3
 import os
-import json
 import struct
 import threading
 from typing import List, Dict, Optional, Any
@@ -9,7 +8,7 @@ from typing import List, Dict, Optional, Any
 class DatabaseService:
     """
     Quản lý lưu trữ cơ sở dữ liệu SQLite cho hệ thống trinh sát.
-    Bao gồm 3 bảng chính: ZONES, TRACKS, EVENTS.
+    Bao gồm 2 bảng: TRACKS, EVENTS.
     """
     def __init__(self, db_path: str = "data/surveillance.db"):
         self.db_path = db_path
@@ -27,19 +26,7 @@ class DatabaseService:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             
-            # 1. Bảng ZONES (Vùng cấm & vùng giám sát)
-            cursor.execute("""
-            CREATE TABLE IF NOT EXISTS zones (
-                zone_id TEXT PRIMARY KEY,
-                zone_name TEXT NOT NULL,
-                zone_type TEXT NOT NULL,
-                polygon_points TEXT NOT NULL,
-                loiter_threshold REAL DEFAULT 10.0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """)
-
-            # 2. Bảng TRACKS (Đối tượng theo dõi)
+            # 1. Bảng TRACKS (Đối tượng theo dõi)
             cursor.execute("""
             CREATE TABLE IF NOT EXISTS tracks (
                 track_id INTEGER PRIMARY KEY,
@@ -49,7 +36,7 @@ class DatabaseService:
             )
             """)
 
-            # 3. Bảng EVENTS (Nhật ký cảnh báo sự kiện vi phạm)
+            # 2. Bảng EVENTS (Nhật ký cảnh báo sự kiện vi phạm)
             cursor.execute("""
             CREATE TABLE IF NOT EXISTS events (
                 event_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -106,7 +93,7 @@ class DatabaseService:
         """Số cảnh báo theo từng loại hành vi (dùng cho thanh footer trên web)"""
         with self._count_lock:
             counts = dict(self._event_counts)
-        for event_type in ("LOITERING", "RUNNING", "FALLING", "FIGHTING"):
+        for event_type in ("RUNNING", "FALLING", "FIGHTING"):
             counts.setdefault(event_type, 0)
         return counts
 
@@ -124,31 +111,3 @@ class DatabaseService:
                     d["confidence"] = struct.unpack("<f", d["confidence"])[0] if len(d["confidence"]) == 4 else 0.0
                 events.append(d)
             return events
-
-    def save_zone(self, zone_id: str, zone_name: str, zone_type: str, polygon_points: list, loiter_threshold: float = 10.0):
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-            INSERT OR REPLACE INTO zones (zone_id, zone_name, zone_type, polygon_points, loiter_threshold)
-            VALUES (?, ?, ?, ?, ?)
-            """, (zone_id, zone_name, zone_type, json.dumps(polygon_points), loiter_threshold))
-            conn.commit()
-
-    def load_zones(self) -> List[Dict[str, Any]]:
-        with self._get_connection() as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM zones")
-            rows = cursor.fetchall()
-            result = []
-            for row in rows:
-                d = dict(row)
-                d["polygon_points"] = json.loads(d["polygon_points"])
-                result.append(d)
-            return result
-
-    def clear_all_zones(self):
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM zones")
-            conn.commit()

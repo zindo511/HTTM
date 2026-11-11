@@ -24,28 +24,18 @@
         <section class="stream-panel">
             <div class="stream-wrapper">
                 <img id="videoStream" src="/video_feed" alt="Live Camera Feed">
-                <canvas id="roiCanvas"></canvas>
                 <div id="liveAlertBanner" class="live-alert-banner" style="display: none;"></div>
             </div>
             
             <div class="stream-controls" style="flex-wrap: wrap; gap: 8px;">
-                <div style="display: flex; gap: 8px; align-items: center;">
-                    <select id="zoneTypeSelect" class="btn" style="background: #334155; color: #fff; cursor: pointer;" onchange="redrawCanvas()">
-                        <option value="LOITERING_ZONE">⏳ Vùng giám sát Lảng vảng</option>
-                    </select>
-                    <button id="btnDrawROI" class="btn btn-primary" onclick="toggleDrawROI()">🖌️ Vẽ vùng ROI mới</button>
-                    <button class="btn btn-success" onclick="saveROI()">💾 Lưu vùng</button>
-                    <button class="btn btn-danger" onclick="clearROI()">🗑️ Xóa sạch vùng</button>
-                </div>
-                
                 <div style="display: flex; gap: 8px; align-items: center; margin-left: auto;">
                     <label style="font-size: 0.85rem; color: #38bdf8; font-weight: 600;">Nguồn Video:</label>
                     <select id="videoSelect" class="btn" style="background: #334155; color: #fff; cursor: pointer;" onchange="onSelectVideoSource(this.value)">
-                        <option value="data/test_videos/people_walking.mp4">📹 1. Lảng vảng / Đi lại (people_walking.mp4)</option>
+                        <option value="data/test_videos/people_walking.mp4">📹 1. Đi lại bình thường (people_walking.mp4)</option>
                         <option value="data/test_videos/fall_sample.mp4">🚨 2. Té ngã thực tế (fall_sample.mp4)</option>
                         <option value="data/test_videos/walking_corridor.mp4">🚶 3. Hành lang đi lại (walking_corridor.mp4)</option>
                         <option value="data/test_videos/fight1.mp4">🥊 4. Ẩu đả / Vật lộn (fight1.mp4)</option>
-                        <option value="0">📷 4. Webcam máy tính trực tiếp</option>
+                        <option value="0">📷 5. Webcam máy tính trực tiếp</option>
                     </select>
                     <label class="btn btn-primary" style="margin: 0; cursor: pointer;">
                         📤 Tải video lên
@@ -73,7 +63,6 @@
     <footer>
         <div>
             <span>Hành vi giám sát: </span>
-            <strong style="color: #eab308;">Lảng vảng: <span id="countLOITERING">0</span></strong> &nbsp;|&nbsp; 
             <strong style="color: #f97316;">Chạy: <span id="countRUNNING">0</span></strong> &nbsp;|&nbsp; 
             <strong style="color: #ec4899;">Té ngã: <span id="countFALLING">0</span></strong> &nbsp;|&nbsp; <strong style="color: #a855f7;">Ẩu đả: <span id="countFIGHTING">0</span></strong>
         </div>

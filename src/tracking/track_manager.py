@@ -32,15 +32,8 @@ class TrackHistory:
     fall_motion_samples: deque = field(default_factory=lambda: deque(maxlen=120))
 
     current_state: str = "NORMAL"
-    current_zone_id: Optional[str] = None
-    zone_entry_time: Optional[float] = None
-    last_seen_inside_zone: float = 0.0
-    exit_grace_period: float = 2.0  # Vùng đệm 2 giây chống rung biên và che khuất
-    
-    # Bộ đếm khung hình liên tục bên trong vùng cấm (chống nhiễu rung lắc)
-    consecutive_inside_frames: int = 0
-    
-    # Ma trận lưu mốc thời gian cảnh báo gần nhất để chống spam: {"LOITERING": t1, "RUNNING": t2}
+
+    # Ma trận lưu mốc thời gian cảnh báo gần nhất để chống spam: {"FALLING": t1, "RUNNING": t2}
     last_alert_time: Dict[str, float] = field(default_factory=dict)
 
     def can_trigger_alert(self, event_type: str, current_time: float, cooldown: float) -> bool:
@@ -59,12 +52,11 @@ class TrackManager:
     Quản lý tập trung toàn bộ các đối tượng đang theo dõi trong RAM.
     Có cơ chế dọn rác TTL (Time-to-Live) để tránh rò rỉ bộ nhớ khi người rời khỏi khung nhìn.
     """
-    def __init__(self, track_ttl: float = 5.0, exit_grace_period: float = 2.0,
+    def __init__(self, track_ttl: float = 5.0,
                  max_missing_kpts: int = 5, max_fill_seconds: float = 0.25):
         self.track_ttl = track_ttl
         self.max_missing_kpts = max_missing_kpts
         self.max_fill_seconds = max_fill_seconds
-        self.exit_grace_period = exit_grace_period
         self.tracks: Dict[int, TrackHistory] = {}
 
     def get_or_create(self, track_id: int, current_time: float) -> TrackHistory:
@@ -72,9 +64,7 @@ class TrackManager:
             self.tracks[track_id] = TrackHistory(
                 track_id=track_id,
                 first_seen=current_time,
-                last_seen=current_time,
-                last_seen_inside_zone=current_time,
-                exit_grace_period=self.exit_grace_period
+                last_seen=current_time
             )
         return self.tracks[track_id]
 

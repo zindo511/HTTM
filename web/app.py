@@ -77,18 +77,8 @@ def broadcast_alert_sync(payload: dict):
     future.add_done_callback(report_result)
 
 
-def _db_zone_to_pipeline_zone(row: dict) -> dict:
-    """Chuyển bản ghi bảng zones (SQLite) về định dạng zone dùng trong pipeline"""
-    return {
-        "id": row["zone_id"],
-        "name": row["zone_name"],
-        "type": row["zone_type"],
-        "polygon": row["polygon_points"],
-    }
-
-
 @app.on_event("startup")
-async def load_zones_from_db():
+async def start_shared_stream():
     global global_loop
     global_loop = asyncio.get_running_loop()
     print("[WS] Đã gắn event loop của server.")
@@ -97,13 +87,6 @@ async def load_zones_from_db():
         return
 
     shared_stream.start()
-
-    existing_ids = {z.get("id") for z in global_pipeline.zones}
-
-    for row in global_pipeline.db_service.load_zones():
-        if row["zone_id"] not in existing_ids:
-            global_pipeline.zones.append(_db_zone_to_pipeline_zone(row))
-            existing_ids.add(row["zone_id"])
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -143,31 +126,6 @@ async def video_feed():
         generate_mjpeg_stream(),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
-
-
-@app.post("/api/zones")
-async def add_zone(request: Request):
-    global global_pipeline
-    data = await request.json()
-    if global_pipeline:
-        global_pipeline.zones.append(data)
-        # Lưu vào SQLite
-        global_pipeline.db_service.save_zone(
-            zone_id=data.get("id"),
-            zone_name=data.get("name"),
-            zone_type=data.get("type", "LOITERING_ZONE"),
-            polygon_points=data.get("polygon", [])
-        )
-    return {"status": "success", "zones": global_pipeline.zones if global_pipeline else []}
-
-
-@app.post("/api/zones/clear")
-async def clear_zones():
-    global global_pipeline
-    if global_pipeline:
-        global_pipeline.zones = []
-        global_pipeline.db_service.clear_all_zones()
-    return {"status": "cleared"}
 
 
 @app.get("/api/events")

@@ -42,8 +42,6 @@ def evaluate(source, config, out, target_fps):
         cv2.imwrite(str(out / f'{source.stem}-{len(events)}-{event["event_type"]}.jpg'), kwargs['frame'])
 
     cfg = copy.deepcopy(config)
-    cfg['zones'] = []
-    cfg['behaviors']['loitering']['enabled'] = False
     cfg['behaviors']['running']['enabled'] = False
     cfg['web']['snapshots_dir'] = str(out / 'snapshots')
     with patch('src.core.pipeline.DatabaseService') as db:
@@ -54,7 +52,6 @@ def evaluate(source, config, out, target_fps):
     pipeline.alert_manager = sink
     pipeline.motion_fall_detector.alert_manager = sink
     pipeline.fighting_detector.alert_manager = sink
-    pipeline.loitering_detector.alert_manager = sink
 
     class CachedModel:
         def track(self, **kwargs):
