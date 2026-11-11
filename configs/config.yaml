@@ -40,6 +40,8 @@ behaviors:
     body_lean_min: 15.0     # Độ đổ người nghiêng đi tối thiểu (độ), bỏ qua nếu V >= 1.5 lần ngưỡng
     window_seconds: 0.5     # Cửa sổ thời gian đo vận tốc (giây), không phụ thuộc FPS
     confirm_frames: 3       # Số lần đo liên tiếp vượt ngưỡng mới báo (lọc nhiễu)
+    max_step_speed_bh: 6.0  # Bbox nhảy nhanh hơn mức này giữa 2 frame => đổi ID / nhiễu, bỏ phép đo
+    max_gap_seconds: 0.5    # Mất dấu lâu hơn mức này trong cửa sổ đo => không tính vận tốc
     cooldown_seconds: 4.0
 
   falling:
@@ -73,6 +75,8 @@ behaviors:
     confirm_frames: 4           # Số frame liên tiếp xác nhận xô xát
     confirm_seconds: 0.15       # Xác nhận theo thời gian, ổn định khi FPS AI thay đổi
     cooldown_seconds: 6.0       # Thời gian chờ giữa 2 lần báo động ẩu đả
+    pass_by_speed_bh: 1.0       # Cả 2 người cùng di chuyển >= mức này (BH/s) => chạy cùng / lướt qua, không phải ẩu đả
+    body_window_seconds: 0.5    # Cửa sổ đo vận tốc tịnh tiến thân người cho điều kiện trên
 
 zones:
   - id: "ZONE_01"

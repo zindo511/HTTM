@@ -43,6 +43,10 @@ class FightingDetector:
         self.pair_last_seen: Dict[Tuple[int, int], float] = {}
         self.pair_prev_dist: Dict[Tuple[int, int], Tuple[float, float]] = {}
 
+        # Hai người cùng di chuyển nhanh (chạy bộ cạnh nhau / chạy lướt qua nhau) không phải ẩu đả.
+        self.pass_by_speed_bh = config.get("pass_by_speed_bh", 1.0)
+        self.body_window = config.get("body_window_seconds", 0.5)
+
     def process_all(
         self,
         active_tracks: List[TrackHistory],
@@ -60,9 +64,11 @@ class FightingDetector:
         n = len(active_tracks)
         limb_speeds: Dict[int, float] = {}
         torso_agitation: Dict[int, float] = {}
+        body_speeds: Dict[int, float] = {}
         for t in active_tracks:
             limb_speeds[t.track_id] = self._compute_limb_speed(t)
             torso_agitation[t.track_id] = self._compute_torso_agitation(t)
+            body_speeds[t.track_id] = self._compute_body_speed(t)
 
         for i in range(n):
             for j in range(i + 1, n):
@@ -133,7 +139,12 @@ class FightingDetector:
                 # 3. Lao thẳng vào va chạm mạnh (Aggressive Charge)
                 cue_charge = (d_norm <= 0.85 and v_closing >= 1.35 and max_v_limb >= self.limb_speed_thresh * 0.75)
 
-                is_fighting_now = cue_strike or cue_grapple or cue_charge
+                # Cả hai đều đang di chuyển nhanh => chạy cùng nhau / lướt qua nhau, không phải đánh nhau.
+                # (Lao vào đánh: nạn nhân đứng yên nên không bị loại.)
+                passing_by = min(body_speeds.get(ta.track_id, 0.0),
+                                 body_speeds.get(tb.track_id, 0.0)) >= self.pass_by_speed_bh
+
+                is_fighting_now = (cue_strike or cue_grapple or cue_charge) and not passing_by
 
                 prev_streak = self.pair_streaks.get(pair_key, 0)
                 if is_fighting_now:
@@ -267,6 +278,33 @@ class FightingDetector:
                 max_speed = speed_rel
 
         return max_speed
+
+    def _compute_body_speed(self, track: TrackHistory) -> float:
+        """Vận tốc tịnh tiến của cả người (BH/s) trên cửa sổ `body_window` giây."""
+        n = min(len(track.bbox_history), len(track.timestamp_history))
+        if n < 3:
+            return 0.0
+        ts = track.timestamp_history
+        bb = track.bbox_history
+        t_now = ts[-1]
+        j = None
+        for i in range(n - 1, -1, -1):
+            if t_now - ts[-n + i] >= self.body_window * 0.6:
+                j = -n + i
+                break
+        if j is None:
+            # Track mới xuất hiện: dùng mẫu cũ nhất nếu đã đủ ~0.1s để không bỏ lọt cặp chạy cùng nhau.
+            j = -n
+            if t_now - ts[j] < 0.1:
+                return 0.0
+        dt = t_now - ts[j]
+        if dt <= 0 or dt > self.body_window * 2:
+            return 0.0
+        b0, b1 = bb[j], bb[-1]
+        h = max(1.0, (b0[3] - b0[1] + b1[3] - b1[1]) / 2.0)
+        dx = (b1[0] + b1[2] - b0[0] - b0[2]) / 2.0
+        dy = (b1[1] + b1[3] - b0[1] - b0[3]) / 2.0
+        return math.hypot(dx, dy) / (dt * h)
 
     def _compute_torso_agitation(self, track: TrackHistory) -> float:
         """Đo mức độ giật lắc của thân người (BH/s) để phát hiện vật lộn khi tay bị che khuất."""
