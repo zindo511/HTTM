@@ -4,7 +4,7 @@ import asyncio
 import shutil
 from typing import List
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, UploadFile, File
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from src.core.shared_stream import SharedVideoStream
@@ -186,7 +186,7 @@ async def get_events():
             "confidence": round((row["confidence"] or 0) * 100, 1),
             "timestamp": row["timestamp"],
             "snapshot_url": f"/snapshots/{snapshot_name}",
-            "extra_info": "",
+            "extra_info": row.get("extra_info") or "",
         })
     return events
 
@@ -200,36 +200,66 @@ async def get_event_stats():
     return {"total": sum(by_type.values()), "by_type": by_type}
 
 
+UPLOAD_DIR = "data/test_videos"
+ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv"}
+
+
+def _error(message: str, status_code: int = 400) -> JSONResponse:
+    return JSONResponse({"status": "error", "message": message}, status_code=status_code)
+
+
+def _switch_source(new_source) -> bool:
+    """Mở nguồn mới trước; chỉ thay nguồn cũ khi mở thành công để stream không bị chết."""
+    global global_capture
+    from src.core.capture import CaptureThread
+
+    old_capture = global_capture
+    same_device = (old_capture is not None and isinstance(new_source, int)
+                   and old_capture.source == new_source)
+    if same_device:
+        # Webcam không mở được 2 lần cùng lúc: buộc phải đóng trước.
+        old_capture.stop()
+    new_capture = CaptureThread(source=new_source, buffer_size=2)
+    if not new_capture.start_capture():
+        if same_device:
+            global_capture = None
+        return False
+    global_capture = new_capture
+    if old_capture is not None and not same_device:
+        old_capture.stop()
+    if global_pipeline:
+        global_pipeline.request_reset()
+    return True
+
+
 @app.post("/api/change_source")
 async def change_source(request: Request):
     """Đổi nguồn video ngay tức thì mà không cần khởi động lại server"""
-    global global_capture
     data = await request.json()
     new_source = data.get("source")
-    if new_source is not None:
-        if str(new_source).isdigit():
-            new_source = int(new_source)
-        if global_capture:
-            global_capture.stop()
-            from src.core.capture import CaptureThread
-            global_capture = CaptureThread(source=new_source, buffer_size=2)
-            global_capture.start_capture()
-        return {"status": "success", "new_source": str(new_source)}
-    return {"status": "error", "message": "Source missing"}
+    if new_source is None or str(new_source).strip() == "":
+        return _error("Thiếu nguồn video")
+    if str(new_source).isdigit():
+        new_source = int(new_source)
+    if not _switch_source(new_source):
+        return _error(f"Không mở được nguồn video: {new_source}")
+    return {"status": "success", "new_source": str(new_source)}
 
 
 @app.post("/api/upload_video")
 async def upload_video(file: UploadFile = File(...)):
-    """Tải file video MP4 từ trình duyệt lên và phát tự động"""
-    global global_capture
-    dest_path = os.path.join("data/test_videos", file.filename)
+    """Tải file video từ trình duyệt lên và phát tự động"""
+    # Chỉ giữ tên file, bỏ mọi thành phần đường dẫn do client gửi lên.
+    filename = os.path.basename((file.filename or "").replace("\\", "/"))
+    if not filename or os.path.splitext(filename)[1].lower() not in ALLOWED_VIDEO_EXTENSIONS:
+        return _error("Chỉ nhận file video: " + ", ".join(sorted(ALLOWED_VIDEO_EXTENSIONS)))
+
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    dest_path = os.path.join(UPLOAD_DIR, filename).replace("\\", "/")
     with open(dest_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
-    
-    if global_capture:
-        global_capture.stop()
-        from src.core.capture import CaptureThread
-        global_capture = CaptureThread(source=dest_path, buffer_size=2)
-        global_capture.start_capture()
+
+    if not _switch_source(dest_path):
+        return _error("Đã lưu file nhưng không mở được video này")
     return {"status": "success", "video_path": dest_path}
 

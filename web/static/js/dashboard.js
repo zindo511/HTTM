@@ -408,6 +408,9 @@ async function onSelectVideoSource(sourceValue) {
             console.log("[INFO] Đã chuyển nguồn video sang:", sourceValue);
             // Tải lại thẻ img video_feed để làm mới luồng stream
             refreshVideoStream();
+        } else {
+            const err = await response.json().catch(() => ({}));
+            alert("Không chuyển được nguồn video: " + (err.message || response.status));
         }
     } catch (e) {
         console.error("Lỗi khi chuyển nguồn video:", e);
@@ -442,6 +445,9 @@ async function uploadCustomVideo(input) {
             select.value = data.video_path;
             
             refreshVideoStream();
+        } else {
+            const err = await res.json().catch(() => ({}));
+            alert("Tải video thất bại: " + (err.message || res.status));
         }
     } catch (e) {
         alert("Lỗi khi tải video: " + e);

@@ -3,6 +3,7 @@ import os
 from typing import Dict, Any, List, Optional
 import cv2
 import numpy as np
+import torch
 from ultralytics import YOLO
 
 from src.tracking.track_manager import TrackManager
@@ -52,11 +53,21 @@ class SurveillancePipeline:
         print(f"[INFO] Đang nạp mô hình YOLO-Pose: {model_pose_path}...")
         self.yolo_model = YOLO(model_pose_path)
 
+        # Thiết bị suy luận: tự lùi về CPU nếu cấu hình yêu cầu CUDA mà máy không có
+        self.device = str(self.sys_cfg.get("device", "cpu"))
+        if self.device.startswith("cuda") and not torch.cuda.is_available():
+            print(f"[WARNING] Cấu hình device={self.device} nhưng không có CUDA, chuyển sang CPU.")
+            self.device = "cpu"
+        print(f"[INFO] Thiết bị suy luận: {self.device}")
+
         self.bilstm_model = None
         if self.sys_cfg.get("enable_bilstm_tier2", False):
             bilstm_path = self.sys_cfg.get("model_bilstm_path", "weights/fall_bilstm.pt")
             if os.path.exists(bilstm_path):
-                self.bilstm_model = BiLSTMInferenceWrapper(model_path=bilstm_path)
+                self.bilstm_model = BiLSTMInferenceWrapper(model_path=bilstm_path, device=self.device)
+            else:
+                print(f"[WARNING] enable_bilstm_tier2=true nhưng không thấy {bilstm_path}; "
+                      "té ngã chỉ được xác nhận bằng FSM hình học.")
 
         # 3. Quản lý bám vết đối tượng (TrackManager)
         self.track_manager = TrackManager(
@@ -88,7 +99,23 @@ class SurveillancePipeline:
         """Cho phép người dùng cập nhật lại vùng ROI ngay trên giao diện web"""
         self.zones = new_zones
 
+    def request_reset(self):
+        """Đánh dấu cần xoá trạng thái bám vết (gọi khi đổi nguồn video, an toàn giữa các luồng)."""
+        self._reset_requested = True
+
+    def _reset_tracking_state(self):
+        self.track_manager.tracks.clear()
+        self.fighting_detector = FightingDetector(self.behav_cfg.get("fighting", {}), self.alert_manager)
+        # Buộc ByteTrack khởi tạo lại để ID không nối từ video cũ sang video mới
+        if getattr(self.yolo_model, "predictor", None) is not None:
+            self.yolo_model.predictor = None
+        self.fps = 0.0
+
     def process_frame(self, frame: np.ndarray, timestamp: float) -> np.ndarray:
+        if getattr(self, "_reset_requested", False):
+            self._reset_requested = False
+            self._reset_tracking_state()
+
         # Tính FPS tức thời
         dt = timestamp - self.last_time
         if dt > 0:
@@ -107,6 +134,7 @@ class SurveillancePipeline:
             classes=[0],
             tracker="bytetrack.yaml",
             conf=self.sys_cfg.get("confidence_threshold", 0.4),
+            device=self.device,
             verbose=False
         )[0]
 

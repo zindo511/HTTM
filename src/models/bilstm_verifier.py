@@ -46,11 +46,10 @@ class BiLSTMInferenceWrapper:
         self.model.eval()
         
         if model_path:
-            try:
-                self.model.load_state_dict(torch.load(model_path, map_location=self.device))
-                print(f"[INFO] Tải trọng số Bi-LSTM thành công từ: {model_path}")
-            except Exception as e:
-                print(f"[WARNING] Không thể tải model Bi-LSTM từ {model_path} ({e}). Sẽ sử dụng cấu hình mặc định.")
+            # Không được chạy tiếp với trọng số ngẫu nhiên: nạp lỗi thì báo lỗi ngay.
+            self.model.load_state_dict(
+                torch.load(model_path, map_location=self.device, weights_only=True))
+            print(f"[INFO] Tải trọng số Bi-LSTM thành công từ: {model_path}")
 
     def predict(self, sequence_30x34: np.ndarray) -> Tuple[float, float, float]:
         """

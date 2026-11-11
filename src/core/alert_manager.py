@@ -82,7 +82,8 @@ class AlertManager:
                     zone_id=zone_id,
                     confidence=confidence,
                     snapshot_path=snapshot_path,
-                    timestamp=time_str
+                    timestamp=time_str,
+                    extra_info=extra_info
                 )
             
             # 3. Tạo gói tin đẩy qua WebSocket lên giao diện Web Dashboard

@@ -1,5 +1,8 @@
 # CHƯƠNG 4: THỰC NGHIỆM VÀ ĐÁNH GIÁ
 
+> [!WARNING]
+> **Bản nháp — số liệu chưa được kiểm chứng.** Các con số trong chương này (số mẫu, độ chính xác Bi-LSTM, bảng Precision/Recall, Ablation, FPS, độ trễ) là số dự kiến viết từ giai đoạn thiết kế, chưa được đo trên hệ thống thật. Phạm vi hành vi cũng đã đổi sang **Chạy nhanh, Té ngã, Đánh nhau**. Chương này sẽ được viết lại bằng kết quả đo thật; hiện trạng kiểm thử thật xem `docs/behavior_self_test.md`.
+
 ---
 
 ## 4.1. Môi trường cài đặt và tập dữ liệu thử nghiệm

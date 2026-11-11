@@ -62,23 +62,28 @@ class DatabaseService:
                 resolution_status TEXT DEFAULT 'PENDING'
             )
             """)
+            # CSDL cũ chưa có cột mô tả sự kiện -> bổ sung tại chỗ
+            columns = {row[1] for row in cursor.execute("PRAGMA table_info(events)")}
+            if "extra_info" not in columns:
+                cursor.execute("ALTER TABLE events ADD COLUMN extra_info TEXT")
             conn.commit()
 
     def insert_event(
-        self, 
-        track_id: int, 
-        event_type: str, 
-        zone_id: Optional[str], 
-        confidence: float, 
-        snapshot_path: str, 
-        timestamp: str
+        self,
+        track_id: int,
+        event_type: str,
+        zone_id: Optional[str],
+        confidence: float,
+        snapshot_path: str,
+        timestamp: str,
+        extra_info: Optional[str] = None
     ) -> int:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-            INSERT INTO events (track_id, zone_id, event_type, confidence, snapshot_path, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """, (track_id, zone_id, event_type, float(confidence), snapshot_path, timestamp))
+            INSERT INTO events (track_id, zone_id, event_type, confidence, snapshot_path, timestamp, extra_info)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (track_id, zone_id, event_type, float(confidence), snapshot_path, timestamp, extra_info))
             conn.commit()
             event_id = cursor.lastrowid
 

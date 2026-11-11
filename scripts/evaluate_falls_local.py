@@ -1,6 +1,5 @@
 import sys
 import numpy
-sys.path.append(r'E:\btl-httm\.venv\Lib\site-packages')
 from pathlib import Path
 import cv2,json,yaml
 from ultralytics import YOLO

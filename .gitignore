@@ -31,3 +31,10 @@ data/*.avi
 # OS
 Thumbs.db
 .DS_Store
+
+# Dữ liệu sinh ra khi chạy (ảnh bằng chứng, CSDL cảnh báo, video đã vẽ khung)
+data/snapshots/*
+!data/snapshots/.gitkeep
+data/surveillance.db
+data/*.npy
+data/behavior_evaluation*/snapshots/
