@@ -57,3 +57,33 @@ chạy YOLO từ đầu, chọn thư mục đầu ra mới:
 ```powershell
 .\.venv-test\Scripts\python.exe -m scripts.evaluate_behaviors_local fight1.mp4 fall_sample.mp4 --output data/behavior_evaluation_new --check
 ```
+
+## Bổ sung 11/11/2026 — chạy nhanh & đánh nhau
+
+Kiểm tra lại bằng pose đã cache (không cần video/YOLO/torch), **bật cả detector chạy**:
+
+```bash
+python -m scripts.replay_pose_cache --check      # 5/5 video khớp kỳ vọng
+python -m unittest discover -s tests -v          # 38 test
+```
+
+Lỗi đã sửa:
+
+- **Chạy không bao giờ báo ở >= 60 FPS:** lịch sử bbox chỉ giữ 30 mẫu (< 0,5 s
+  cửa sổ đo). Tăng `bbox_history`/`timestamp_history` lên 90 mẫu.
+- **Báo chạy nhầm khi ByteTrack đổi ID / mất dấu:** bbox nhảy xa trong 1 frame bị
+  tính là vận tốc lớn. Bỏ phép đo khi tốc độ từng bước > `max_step_speed_bh` hoặc
+  có khoảng mất dấu > `max_gap_seconds`.
+- **Báo ẩu đả nhầm khi 2 người chạy bộ cạnh nhau hoặc chạy ngược chiều lướt qua
+  nhau** (tay vung khi chạy ~4 BH/s vượt ngưỡng ra đòn). Bỏ qua cặp khi cả hai
+  cùng di chuyển >= `pass_by_speed_bh`. Lao vào đánh người đứng yên vẫn báo.
+
+Test mới: `tests/test_running.py` (đứng yên có rung bbox, đi bộ, chạy có/không
+nghiêng người, 10–60 FPS, nhiều kích thước người, đổi ID, che khuất, tắt
+detector) và `tests/test_fight_running.py` (chạy cạnh nhau, chạy lướt qua nhau,
+đấm tại chỗ, lao vào rồi đánh, ưu tiên trạng thái ẩu đả hơn chạy).
+
+Giới hạn còn lại: cần >= 0,15 s tín hiệu ra đòn **liên tục** mới xác nhận, nên
+cú đấm lẻ có khoảng nghỉ dài có thể bị bỏ sót. Nới điều kiện này làm `01_video`
+(đông người) báo nhầm, nên giữ nguyên. Chưa có video thật có người chạy để đo
+độ nhạy của detector chạy — nên quay thêm 1 clip chạy cho `data/test_videos/`.

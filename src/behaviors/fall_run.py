@@ -21,6 +21,9 @@ class MotionAndFallDetector(FallFSMMixin, BaseBehaviorDetector):
         self.cooldown_run = self.config_run.get("cooldown_seconds", 4.0)
         self.run_window = self.config_run.get("window_seconds", 0.5)
         self.run_confirm_frames = self.config_run.get("confirm_frames", 3)
+        # Chống báo nhầm khi ByteTrack đổi ID / mất dấu: bbox "nhảy" bất thường thì bỏ phép đo.
+        self.max_step_speed = self.config_run.get("max_step_speed_bh", 6.0)
+        self.max_gap = self.config_run.get("max_gap_seconds", 0.5)
 
         # Ngưỡng ngã (3-Phase FSM)
         self.ar_max = self.config_fall.get("aspect_ratio_max", 0.8)
@@ -110,6 +113,19 @@ class MotionAndFallDetector(FallFSMMixin, BaseBehaviorDetector):
                 break
         if j is None:
             return None
+
+        # Teleport / gap guard: a real runner moves smoothly between samples.
+        # dt is floored at 0.1s so bbox jitter at high FPS is not amplified.
+        for k in range(max(1, j - 1), n):
+            step_dt = ts[k] - ts[k - 1]
+            if step_dt > self.max_gap:
+                return None
+            b0, b1 = bb[k - 1], bb[k]
+            step = math.hypot((b1[0] + b1[2] - b0[0] - b0[2]) / 2.0,
+                              (b1[1] + b1[3] - b0[1] - b0[3]) / 2.0)
+            h = max(1.0, min(b0[3] - b0[1], b1[3] - b1[1]))
+            if step / (max(step_dt, 0.1) * h) > self.max_step_speed:
+                return None
 
         def mean_center(lo, hi):
             lo, hi = max(0, lo), min(n, hi)

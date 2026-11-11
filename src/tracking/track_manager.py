@@ -14,10 +14,11 @@ class TrackHistory:
     first_seen: float
     last_seen: float
     foot_positions: deque = field(default_factory=lambda: deque(maxlen=30))
-    bbox_history: deque = field(default_factory=lambda: deque(maxlen=30))
+    # 90 mẫu (~1.5s ở 60 FPS) để cửa sổ vận tốc chạy 0.5s luôn đủ dữ liệu khi FPS cao.
+    bbox_history: deque = field(default_factory=lambda: deque(maxlen=90))
     keypoints_history: deque = field(default_factory=lambda: deque(maxlen=30))
-    
-    timestamp_history: deque = field(default_factory=lambda: deque(maxlen=30))
+
+    timestamp_history: deque = field(default_factory=lambda: deque(maxlen=90))
     keypoint_bbox_history: deque = field(default_factory=lambda: deque(maxlen=30))
     keypoint_observed_history: deque = field(default_factory=lambda: deque(maxlen=30))
     missing_kpts_count: int = 0
