@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Tuple
 COLOR_GREEN = (0, 255, 0)       # Normal
 COLOR_RED = (0, 0, 255)         # Fall Alert
 COLOR_ORANGE = (0, 140, 255)     # Running Alert
-COLOR_YELLOW = (0, 255, 255)     # Loitering Alert
+COLOR_YELLOW = (0, 255, 255)     # Fighting Suspect
 COLOR_MAGENTA = (180, 0, 255)    # Fighting Alert
 COLOR_BLUE = (255, 0, 0)
 COLOR_WHITE = (255, 255, 255)
@@ -22,7 +22,6 @@ SKELETON_PAIRS = [
 
 STATE_VN_LABELS = {
     "NORMAL": "BINH THUONG",
-    "LOITERING_ALERT": "LANG VANG",
     "RUNNING_ALERT": "CHAY BUT TOC",
     "FALLING_ALERT": "TE NGA!",
     "FIGHTING_SUSPECT": "NGHI NGO AU DA",
@@ -43,9 +42,6 @@ def draw_bounding_box(frame: np.ndarray, bbox: Tuple[float, float, float, float]
     elif "FIGHT" in state:
         color = COLOR_MAGENTA
         thickness = 3
-    elif "LOITER" in state:
-        color = COLOR_YELLOW
-        thickness = 2
     elif "RUN" in state:
         color = COLOR_ORANGE
         thickness = 2
@@ -58,13 +54,14 @@ def draw_bounding_box(frame: np.ndarray, bbox: Tuple[float, float, float, float]
     # Vẽ nhãn phía trên hộp
     (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
     top_y = max(20, y1)
-    cv2.rectangle(frame, (x1, top_y - 20), (x1 + w + 10, top_y), color, -1)
-    cv2.putText(frame, label, (x1 + 5, top_y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLOR_WHITE, 1, cv2.LINE_AA)
+    label_x = max(0, min(x1, frame.shape[1] - w - 10))
+    cv2.rectangle(frame, (label_x, top_y - 20), (label_x + w + 10, top_y), color, -1)
+    cv2.putText(frame, label, (label_x + 5, top_y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLOR_WHITE, 1, cv2.LINE_AA)
 
 
-def draw_foot_point(frame: np.ndarray, foot_point: Tuple[float, float], is_inside: bool = False):
+def draw_foot_point(frame: np.ndarray, foot_point: Tuple[float, float]):
     fx, fy = int(foot_point[0]), int(foot_point[1])
-    color = COLOR_RED if is_inside else COLOR_BLUE
+    color = COLOR_BLUE
     cv2.circle(frame, (fx, fy), 5, color, -1)
     cv2.circle(frame, (fx, fy), 8, color, 1)
 
@@ -193,29 +190,6 @@ def draw_fighting_overlay(frame: np.ndarray, fight_info: Dict[str, Any]):
     )
 
 
-def draw_roi_zones(frame: np.ndarray, zones: List[Dict[str, Any]]):
-    """
-    Vẽ các vùng cấm hoặc vùng giám sát đa giác lên khung hình.
-    """
-    overlay = frame.copy()
-    
-    for zone in zones:
-        polygon = np.array(zone.get("polygon", []), dtype=np.int32)
-        if len(polygon) < 3:
-            continue
-            
-        color = COLOR_YELLOW
-        name = zone.get("name", zone.get("id", "Zone"))
-        
-        cv2.fillPoly(overlay, [polygon], color)
-        cv2.polylines(frame, [polygon], isClosed=True, color=color, thickness=2)
-        
-        top_pt = polygon[0]
-        cv2.putText(frame, f"[ROI] {name}", (top_pt[0], top_pt[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-
-    cv2.addWeighted(overlay, 0.25, frame, 0.75, 0, frame)
-
-
 def draw_hud(frame: np.ndarray, fps: float, active_tracks: int, alerts_count: int):
     """
     Vẽ bảng thông số hệ thống (Heads-Up Display) ở góc trên màn hình.
@@ -225,6 +199,6 @@ def draw_hud(frame: np.ndarray, fps: float, active_tracks: int, alerts_count: in
     cv2.rectangle(frame, (10, 10), (10 + box_w, 78), (0, 0, 0), -1)
     cv2.rectangle(frame, (10, 10), (10 + box_w, 78), (100, 100, 100), 1)
     
-    cv2.putText(frame, f"FPS: {fps:.1f} (Zero-Lag Stream)", (18, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 255, 0), 1, cv2.LINE_AA)
+    cv2.putText(frame, f"FPS mau: {fps:.1f}", (18, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 255, 0), 1, cv2.LINE_AA)
     cv2.putText(frame, f"Nguoi trong tam nhin: {active_tracks:02d}", (18, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (255, 255, 255), 1, cv2.LINE_AA)
     cv2.putText(frame, f"Tong so canh bao: {alerts_count:02d}", (18, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 0, 255) if alerts_count > 0 else (200, 200, 200), 1, cv2.LINE_AA)

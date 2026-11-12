@@ -1,0 +1,99 @@
+[
+  {
+    "clip": "../fight1.mp4",
+    "variant": "conf_0.1",
+    "frames": 234,
+    "detected_frames": 234,
+    "tracked_frames": 229,
+    "coverage": 0.979,
+    "track_ids": 14,
+    "max_speed": 0.839,
+    "events": [
+      {
+        "time": 3.44,
+        "type": "FALLING"
+      }
+    ],
+    "inference_ms_per_frame": 59.95
+  },
+  {
+    "clip": "../fight1.mp4",
+    "variant": "conf_0.15",
+    "frames": 234,
+    "detected_frames": 234,
+    "tracked_frames": 231,
+    "coverage": 0.987,
+    "track_ids": 15,
+    "max_speed": 0.684,
+    "events": [
+      {
+        "time": 3.44,
+        "type": "FALLING"
+      }
+    ],
+    "inference_ms_per_frame": 59.95
+  },
+  {
+    "clip": "../fight1.mp4",
+    "variant": "conf_0.2",
+    "frames": 234,
+    "detected_frames": 232,
+    "tracked_frames": 227,
+    "coverage": 0.97,
+    "track_ids": 17,
+    "max_speed": 0.571,
+    "events": [
+      {
+        "time": 3.44,
+        "type": "FALLING"
+      }
+    ],
+    "inference_ms_per_frame": 59.95
+  },
+  {
+    "clip": "../fight1.mp4",
+    "variant": "conf_0.25",
+    "frames": 234,
+    "detected_frames": 231,
+    "tracked_frames": 226,
+    "coverage": 0.966,
+    "track_ids": 16,
+    "max_speed": 0.569,
+    "events": [
+      {
+        "time": 3.44,
+        "type": "FALLING"
+      }
+    ],
+    "inference_ms_per_frame": 59.95
+  },
+  {
+    "clip": "../fight1.mp4",
+    "variant": "conf_0.3",
+    "frames": 234,
+    "detected_frames": 228,
+    "tracked_frames": 225,
+    "coverage": 0.962,
+    "track_ids": 14,
+    "max_speed": 0.569,
+    "events": [
+      {
+        "time": 3.44,
+        "type": "FALLING"
+      }
+    ],
+    "inference_ms_per_frame": 59.95
+  },
+  {
+    "clip": "../fight1.mp4",
+    "variant": "conf_0.4",
+    "frames": 234,
+    "detected_frames": 220,
+    "tracked_frames": 218,
+    "coverage": 0.932,
+    "track_ids": 10,
+    "max_speed": 0.672,
+    "events": [],
+    "inference_ms_per_frame": 59.95
+  }
+]

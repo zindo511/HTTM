@@ -18,6 +18,15 @@ class TrackHistory:
     keypoints_history: deque = field(default_factory=lambda: deque(maxlen=30))
     
     timestamp_history: deque = field(default_factory=lambda: deque(maxlen=30))
+    # Separate time-based history: pose sequences still keep their original 30 samples.
+    run_motion_history: deque = field(default_factory=deque)
+    run_fast_since: Optional[float] = None
+    run_last_time: Optional[float] = None
+    # Máy trạng thái chạy: NORMAL -> SUSPECTED -> CONFIRMED -> COOLDOWN
+    run_state: str = "NORMAL"
+    run_last_fast_time: Optional[float] = None
+    run_alert_time: Optional[float] = None
+    run_depth_dominant: bool = False  # tốc độ chủ yếu do tiến/lùi so với camera
     keypoint_bbox_history: deque = field(default_factory=lambda: deque(maxlen=30))
     keypoint_observed_history: deque = field(default_factory=lambda: deque(maxlen=30))
     missing_kpts_count: int = 0
@@ -30,17 +39,14 @@ class TrackHistory:
     fall_reference_height: Optional[float] = None
     fall_height_samples: deque = field(default_factory=lambda: deque(maxlen=180))
     fall_motion_samples: deque = field(default_factory=lambda: deque(maxlen=120))
+    # (time, bbox height) over the slow-collapse window
+    fall_collapse_samples: deque = field(default_factory=lambda: deque(maxlen=240))
+    fall_impact_kind: Optional[str] = None  # "fast" (rơi nhanh) hoặc "collapse" (sụp chậm)
+    fall_not_low_since: Optional[float] = None
 
     current_state: str = "NORMAL"
-    current_zone_id: Optional[str] = None
-    zone_entry_time: Optional[float] = None
-    last_seen_inside_zone: float = 0.0
-    exit_grace_period: float = 2.0  # Vùng đệm 2 giây chống rung biên và che khuất
-    
-    # Bộ đếm khung hình liên tục bên trong vùng cấm (chống nhiễu rung lắc)
-    consecutive_inside_frames: int = 0
-    
-    # Ma trận lưu mốc thời gian cảnh báo gần nhất để chống spam: {"LOITERING": t1, "RUNNING": t2}
+
+    # Ma trận lưu mốc thời gian cảnh báo gần nhất để chống spam: {"FALLING": t1, "RUNNING": t2}
     last_alert_time: Dict[str, float] = field(default_factory=dict)
 
     def can_trigger_alert(self, event_type: str, current_time: float, cooldown: float) -> bool:
@@ -59,12 +65,13 @@ class TrackManager:
     Quản lý tập trung toàn bộ các đối tượng đang theo dõi trong RAM.
     Có cơ chế dọn rác TTL (Time-to-Live) để tránh rò rỉ bộ nhớ khi người rời khỏi khung nhìn.
     """
-    def __init__(self, track_ttl: float = 5.0, exit_grace_period: float = 2.0,
-                 max_missing_kpts: int = 5, max_fill_seconds: float = 0.25):
+    def __init__(self, track_ttl: float = 5.0,
+                 max_missing_kpts: int = 5, max_fill_seconds: float = 0.25,
+                 motion_history_seconds: float = 2.0):
         self.track_ttl = track_ttl
         self.max_missing_kpts = max_missing_kpts
         self.max_fill_seconds = max_fill_seconds
-        self.exit_grace_period = exit_grace_period
+        self.motion_history_seconds = motion_history_seconds
         self.tracks: Dict[int, TrackHistory] = {}
 
     def get_or_create(self, track_id: int, current_time: float) -> TrackHistory:
@@ -72,9 +79,7 @@ class TrackManager:
             self.tracks[track_id] = TrackHistory(
                 track_id=track_id,
                 first_seen=current_time,
-                last_seen=current_time,
-                last_seen_inside_zone=current_time,
-                exit_grace_period=self.exit_grace_period
+                last_seen=current_time
             )
         return self.tracks[track_id]
 
@@ -91,6 +96,18 @@ class TrackManager:
         track.bbox_history.append(bbox)
         track.timestamp_history.append(current_time)
         track.foot_positions.append(foot_point)
+        motion = track.run_motion_history
+        if motion and current_time <= motion[-1][0]:
+            motion.clear()
+            track.run_fast_since = None
+            track.run_last_time = None
+            track.run_last_fast_time = None
+            track.run_alert_time = None
+            track.run_state = "NORMAL"
+        motion.append((current_time, bbox))
+        # Keep one sample before the cutoff for time-window interpolation/selection.
+        while len(motion) > 2 and motion[1][0] <= current_time - self.motion_history_seconds:
+            motion.popleft()
         valid = (keypoints is not None and keypoints.ndim == 2
                  and keypoints.shape[0] == 17 and keypoints.shape[1] in (2, 3)
                  and np.isfinite(keypoints).all()

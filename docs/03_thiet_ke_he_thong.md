@@ -1,429 +1,408 @@
 # CHƯƠNG 3: PHÂN TÍCH VÀ THIẾT KẾ HỆ THỐNG
 
+Chương này mô tả hệ thống **đúng như mã nguồn hiện tại**. Mỗi mục ghi rõ file cài đặt tương ứng. Những phần đã thiết kế nhưng chưa hoàn thành được đánh dấu rõ.
+
 ---
 
-## 3.1. Kiến trúc tổng thể hệ thống trinh sát (Pipeline đa luồng)
+## 3.1. Kiến trúc tổng thể
 
-### 3.1.1. Kiến trúc 4 tầng (4-Layer System Architecture)
-Hệ thống được thiết kế theo mô hình phân tầng hướng dịch vụ (Layered Architecture), tách biệt hoàn toàn giữa việc thu thập dữ liệu thô, động cơ suy luận AI, tầng phân tích hành vi nghiệp vụ và tầng giao diện điều khiển:
+### 3.1.1. Kiến trúc 4 tầng
 
 ```mermaid
 graph TD
-    subgraph T1["1. TẦNG THU THẬP DỮ LIỆU (Ingestion Layer)"]
-        Cam1["Camera IP (RTSP)"] --> CapThread["Capture Thread (Hạ tầng luồng độc lập)"]
-        Cam2["Webcam USB / File Video"] --> CapThread
-        CapThread -->|"Khung hình mới nhất (Drop cũ nếu đầy)"| FrameBuffer["Drop-Oldest Buffer / Circular Buffer (Kích thước = 1-2)"]
+    subgraph T1["1. THU HÌNH — src/core/capture.py"]
+        Src["Webcam / File video / Camera IP (RTSP, HTTP)"] --> Cap["CaptureThread (luồng riêng)"]
+        Cap -->|"Khung hình mới nhất, bỏ khung cũ khi đầy"| Buf["DropOldestQueue (kích thước 2)"]
     end
 
-    subgraph T2["2. TẦNG XỬ LÝ THỊ GIÁC AI (Perception Layer)"]
-        FrameBuffer --> AIWorker["AI Inference Worker (GPU / TensorRT / CUDA)"]
-        AIWorker -->|"Pose & Bbox"| YOLO["YOLOv8/v11-Pose (17 Keypoints)"]
-        YOLO -->|"Detection Boxes"| Tracker["ByteTrack Engine (Kalman Filter + Association)"]
+    subgraph T2["2. NHẬN THỨC — src/core/pipeline.py, src/tracking/"]
+        Buf --> Yolo["YOLOv8n-Pose: khung người + 17 khớp xương"]
+        Yolo --> Bt["ByteTrack: gán track_id"]
+        Bt --> Tm["TrackManager: lịch sử từng người"]
     end
 
-    subgraph T3["3. TẦNG SUY LUẬN HÀNH VI (Behavior Reasoning Layer)"]
-        Tracker -->|"Active Tracks (ID, Bbox, Keypoints)"| TrackMgr["TrackHistory Manager (Lưu trữ cửa sổ trượt)"]
-        TrackMgr --> ModIntrusion["Module 1: Xâm nhập (Ray Casting PiP)"]
-        TrackMgr --> ModLoiter["Module 2: Lảng vảng (Dwell Time & Displacement)"]
-        TrackMgr --> ModMotion["Module 3: Chạy & Ngã (Rule-based Fast Check)"]
-        ModMotion -->|"Nghi vấn té ngã"| DeepVerifier["Tier 2: Bi-LSTM Deep Verifier"]
-        ModIntrusion & ModLoiter & ModMotion & DeepVerifier --> CooldownMgr["Cooldown & Anti-Spam Controller"]
+    subgraph T3["3. PHÂN TÍCH HÀNH VI — src/behaviors/"]
+        Tm --> Fall["Té ngã: máy trạng thái theo thời gian (fall_fsm.py)"]
+        Tm --> Run["Chạy nhanh: vận tốc chuẩn hoá (fall_run.py)"]
+        Tm --> Fight["Đánh nhau: luật theo cặp người (fighting.py)"]
+        Fall -.->|"tuỳ chọn, đang tắt"| Lstm["Bi-LSTM xác minh (models/bilstm_verifier.py)"]
     end
 
-    subgraph T4["4. TẦNG ỨNG DỤNG & CẢNH BÁO (Application & UI Layer)"]
-        CooldownMgr -->|"Event Validated"| DBService["Database Service (SQLite / PostgreSQL)"]
-        CooldownMgr -->|"Snapshot Event"| Storage["Lưu trữ ảnh trích xuất (Snapshots)"]
-        CooldownMgr -->|"Real-time Payload"| WSServer["WebSocket & WebRTC / MJPEG Streamer"]
-        WSServer --> UI["Command Dashboard (Giao diện trung tâm chỉ huy)"]
-        DBService --> UI
+    subgraph T4["4. CẢNH BÁO & GIAO DIỆN — src/core/alert_manager.py, web/"]
+        Fall & Run & Fight --> Am["AlertManager (luồng nền)"]
+        Am --> Snap["Ảnh bằng chứng JPEG"]
+        Am --> Db["SQLite"]
+        Am --> Ws["WebSocket /ws/alerts"]
+        Ws --> Ui["Dashboard web"]
+        Db --> Ui
     end
 ```
 
----
+### 3.1.2. Vì sao tách luồng thu hình
 
-### 3.1.2. Tại sao phải thiết kế Pipeline Đa luồng (Multi-threading)?
+Nếu đọc khung hình và chạy AI trong cùng một vòng lặp, khi AI chậm hơn tốc độ camera thì các khung hình chưa xử lý sẽ dồn lại trong bộ đệm, và hình ảnh hiển thị ngày càng trễ so với thực tế.
 
-Trong các bài hướng dẫn cơ bản, video thường được xử lý tuần tự bằng vòng lặp đơn:
-```python
-# CÁCH LÀM TRUYỀN THỐNG (ĐƠN LUỒNG) - KHÔNG THỂ DÙNG THỰC TẾ
-while True:
-    ret, frame = cap.read()       # Bị block bởi I/O mạng hoặc USB
-    results = model(frame)        # Tốn 30-50ms (GPU/CPU)
-    draw_and_show(results)        # Tốn 10ms
-```
+Hệ thống dùng mô hình **Producer – Consumer** với ba luồng:
 
-**Nhược điểm chí mạng của vòng lặp đơn luồng:**
-1. **Tràn bộ đệm RTSP (Buffer Lag):** Luồng RTSP từ Camera IP liên tục đẩy khung hình vào bộ nhớ đệm socket của hệ điều hành với tốc độ $25 - 30 \text{ FPS}$. Nếu khâu xử lý AI mất $50\text{ms}$ ($\approx 20 \text{ FPS}$), bộ đệm mạng sẽ bị tích lũy khung hình trễ. Sau 10 phút, video hiển thị trên màn hình sẽ bị **chậm hơn thực tế từ 10 đến 30 giây**, làm mất hoàn toàn tính trinh sát thời gian thực.
-2. **Đóng băng giao diện người dùng (UI Freezing):** Nếu giao diện vẽ bằng OpenCV (`cv2.imshow`) hoặc web dashboard chạy chung luồng AI, mỗi khi mô hình quá tải, giao diện sẽ giật lag, thao tác vẽ vùng cấm ROI bằng chuột sẽ bị khựng.
+| Luồng | File | Nhiệm vụ |
+| :--- | :--- | :--- |
+| `CaptureThread` | `src/core/capture.py` | Đọc nguồn video liên tục, gắn mốc thời gian cho từng khung hình, đẩy vào `DropOldestQueue`. Khi hàng đợi đầy, khung cũ nhất bị bỏ để nhường chỗ cho khung mới. Với file video, luồng tự điều tiết để phát đúng tốc độ gốc và tự phát lại từ đầu khi hết. |
+| `shared-ai` | `src/core/shared_stream.py` | **Một** luồng duy nhất lấy khung mới nhất, chạy `SurveillancePipeline.process_frame`, mã hoá JPEG. Mọi trình duyệt đang xem đều nhận cùng một kết quả, nên mở nhiều tab không làm AI chạy nhiều lần. |
+| Luồng cảnh báo | `src/core/alert_manager.py` | Mỗi cảnh báo được xử lý trên một luồng nền (ghi ảnh, ghi SQLite, đẩy WebSocket) để không làm chậm khâu AI. |
 
-**Giải pháp Kiến trúc Đa luồng Producer-Consumer:**
-- **Luồng 1 - `CaptureThread` (Producer):** Chuyên trách đọc dữ liệu từ RTSP/Webcam với tốc độ tối đa của camera. Sử dụng hàng đợi **Circular Buffer / Drop-Oldest Queue (`maxsize=1-2`)**: nếu AI chưa kịp xử lý xong, frame cũ nhất trong hàng đợi sẽ bị vứt bỏ ngay lập tức để nạp frame mới nhất vào thế chỗ $\rightarrow$ **Độ trễ luôn tiệm cận 0ms (Zero Latency)**.
-- **Luồng 2 - `InferenceWorker` (Consumer):** Lấy frame mới nhất từ hàng đợi, nạp vào GPU xử lý YOLO-Pose, ByteTrack và chạy các module phân tích hành vi.
-- **Luồng 3 - `BroadcastService`:** Chịu trách nhiệm mã hóa luồng hiển thị và đẩy sự kiện qua WebSocket tới trình duyệt của người giám sát một cách bất đồng bộ (Asynchronous I/O).
+Hệ quả quan trọng: khâu AI có thể chạy chậm hơn camera và **bỏ qua khung hình**. Vì vậy mọi thuật toán hành vi đều tính theo **mốc thời gian thực** gắn với từng khung hình, không theo số khung hình.
 
----
-
-### 3.1.3. Sơ đồ tuần tự (Sequence Diagram) luồng dữ liệu thời gian thực
+### 3.1.3. Luồng dữ liệu thời gian thực
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor User as Nhân viên an ninh
-    participant Cam as Camera / RTSP
-    participant Cap as Capture Thread
-    participant Q as Drop-Oldest Buffer (Latest-Frame)
-    participant Worker as AI & Behavior Worker
-    participant DB as SQLite Database
-    participant WS as WebSocket Server
-    participant UI as Command Dashboard
+    participant Cam as Nguồn video
+    participant Cap as CaptureThread
+    participant Q as DropOldestQueue
+    participant AI as Luồng shared-ai (Pipeline)
+    participant AM as AlertManager
+    participant DB as SQLite
+    participant UI as Dashboard
 
-    User->>UI: Vẽ vùng cấm ROI (Polygon)
-    UI->>Worker: Gửi cấu hình tọa độ ROI (JSON)
-
-    loop Vòng lặp thu nhận (25 - 30 FPS)
-        Cam->>Cap: Gửi luồng byte video (H.264 / RTSP)
-        Cap->>Q: Đẩy Frame mới nhất (Drop frame cũ nếu đầy)
+    loop Tốc độ của nguồn video
+        Cam->>Cap: Khung hình
+        Cap->>Q: (frame, timestamp), bỏ khung cũ nếu đầy
     end
 
-    loop Vòng lặp suy luận AI (18 - 25 FPS)
-        Q->>Worker: Lấy Frame mới nhất
-        Worker->>Worker: YOLO-Pose + ByteTrack (Lấy track_id & keypoints)
-        Worker->>Worker: Cập nhật TrackHistory
-        Worker->>Worker: Kiểm tra Xâm nhập, Lảng vảng, Chạy / Ngã
-
-        alt Phát hiện hành vi bất thường (Đã qua bộ lọc Cooldown)
-            Worker->>DB: Lưu bản ghi sự kiện (track_id, event_type, timestamp)
-            Worker->>Worker: Cắt ảnh snapshot bằng chứng
-            Worker->>WS: Gửi Event Payload + Link snapshot
-            WS->>UI: Bắn tín hiệu WebSocket (Âm thanh chuông + Thẻ cảnh báo đỏ)
+    loop Tốc độ của khâu AI
+        Q->>AI: Khung hình mới nhất
+        AI->>AI: YOLOv8n-Pose + ByteTrack
+        AI->>AI: Cập nhật TrackHistory từng người
+        AI->>AI: Té ngã → Chạy nhanh (từng người), Đánh nhau (từng cặp)
+        alt Có hành vi bất thường và đã hết cooldown
+            AI->>AM: trigger_alert(loại, track_id, khung hình đã vẽ)
+            AM->>DB: Ghi sự kiện
+            AM->>UI: Đẩy cảnh báo qua WebSocket
         end
-
-        Worker->>WS: Đẩy luồng frame đã vẽ Bbox & Keypoints
-        WS->>UI: Render video trực tiếp lên màn hình Dashboard
+        AI->>UI: Khung hình đã vẽ (MJPEG /video_feed)
     end
 ```
 
 ---
 
-## 3.2. Thiết kế thuật toán phát hiện xâm nhập và lảng vảng
+## 3.2. Quản lý đối tượng bám vết
 
-### 3.2.1. Cấu trúc dữ liệu quản lý vòng đời đối tượng (`TrackHistory`)
-Để theo dõi trạng thái di chuyển và thời gian của từng đối tượng, hệ thống quản lý một bảng băm `dict[int, TrackHistory]` trong bộ nhớ RAM:
+### 3.2.1. Cấu trúc `TrackHistory` (`src/tracking/track_manager.py`)
+
+Mỗi `track_id` có một bản ghi lưu trong RAM:
 
 ```python
+@dataclass
 class TrackHistory:
-    track_id: int                    # Mã định danh đối tượng từ ByteTrack
-    first_seen: float                # Timestamp thời điểm đối tượng xuất hiện lần đầu (giây)
-    last_seen: float                 # Timestamp khung hình gần nhất nhìn thấy đối tượng
-    foot_positions: deque            # Hàng đợi lưu N vị trí chân gần nhất: deque(maxlen=30) [(x, y), ...]
-    bbox_history: deque              # Hàng đợi lưu N bounding box gần nhất: deque(maxlen=30) [(x1, y1, x2, y2), ...]
-    keypoints_history: deque         # Hàng đợi lưu 17 khớp xương: deque(maxlen=30) [ndarray(17, 3), ...]
-    current_state: ObjectState       # Trạng thái hiện tại của track_id (NORMAL, LOST, LOITERING,...)
-    current_zone_id: Optional[str]   # ID của vùng ROI mà đối tượng đang đứng bên trong (None nếu ở ngoài)
-    zone_entry_time: Optional[float] # Thời điểm bắt đầu bước chân vào ROI hiện tại
-    last_seen_inside_zone: float     # Timestamp gần nhất đối tượng còn nằm trong ROI (cho bộ lọc Grace Period)
-    exit_grace_period: float = 2.0   # Thời gian gia hạn chống rung biên & che khuất (giây)
-    last_alert_time: dict[str, float]# Lưu timestamp cảnh báo gần nhất theo loại: {"INTRUSION": t1, "LOITER": t2}
+    track_id: int
+    first_seen: float
+    last_seen: float
+
+    # Lịch sử 30 khung hình gần nhất
+    foot_positions: deque            # trung điểm cạnh đáy bbox
+    bbox_history: deque              # (x1, y1, x2, y2)
+    timestamp_history: deque         # mốc thời gian thực của từng khung
+    keypoints_history: deque         # ndarray (17, 3): x, y, độ tin cậy
+    keypoint_bbox_history: deque     # bbox đi kèm từng bộ khớp
+    keypoint_observed_history: deque # True: quan sát thật, False: sao chép từ khung trước
+    missing_kpts_count: int
+    last_valid_kpts_time: Optional[float]
+
+    # Trạng thái máy trạng thái té ngã
+    fall_phase: str                  # NORMAL | IMPACT_PENDING | LYING_VERIFY | FALL_LATCHED
+    fall_impact_time, fall_lying_since, fall_recovery_since, fall_last_time
+    fall_reference_height: Optional[float]
+    fall_height_samples: deque
+    fall_motion_samples: deque
+
+    current_state: str               # trạng thái hiển thị (mục 3.2.3)
+    last_alert_time: Dict[str, float]  # mốc cảnh báo gần nhất theo loại, dùng cho cooldown
 ```
 
----
+### 3.2.2. Xử lý mất khớp xương và dọn dẹp
 
-### 3.2.2. Biểu đồ chuyển đổi trạng thái (State Machine Diagram) của một `track_id`
+- **Bộ khớp hợp lệ:** đủ 17 khớp, giá trị hữu hạn, có ít nhất một khớp với độ tin cậy $\ge 0{,}3$.
+- **Điền tạm (forward-fill):** khi một khung hình không có bộ khớp hợp lệ, bộ khớp gần nhất được sao chép lại, tối đa `max_missing_kpts = 5` khung và tối đa `max_fill_seconds = 0,25` giây. Các bản sao được đánh dấu là không quan sát thật; máy trạng thái té ngã không dùng chúng để tính góc thân hay vận tốc hông.
+- **Xoá lịch sử khớp:** quá các giới hạn trên thì toàn bộ lịch sử khớp của người đó bị xoá, tránh dùng dữ liệu cũ.
+- **Dọn track:** người không xuất hiện quá `track_ttl = 5` giây bị xoá khỏi bộ nhớ.
+- **Đổi nguồn video:** pipeline xoá toàn bộ trạng thái bám vết và khởi tạo lại ByteTrack để ID không nối từ video cũ sang video mới.
 
-Mỗi đối tượng đi vào tầm quan sát của camera sẽ trải qua các bước biến đổi trạng thái nghiêm ngặt nhằm tránh việc chuyển trạng thái hỗn loạn:
+### 3.2.3. Trạng thái hiển thị của một người
 
 ```mermaid
 stateDiagram-v2
-    [*] --> UNTRACKED: YOLO phát hiện Bbox mới
+    [*] --> NORMAL: ByteTrack gán track_id
 
-    UNTRACKED --> NORMAL: ByteTrack gán track_id thành công (Khởi tạo TrackHistory)
+    NORMAL --> RUNNING_ALERT: Vận tốc vượt ngưỡng đủ số lần liên tiếp
+    RUNNING_ALERT --> NORMAL: Vận tốc giảm
 
-    NORMAL --> INTRUSION_ALERT: Chân chạm vào vùng cấm ROI (Point-in-Polygon = True)
-    INTRUSION_ALERT --> INTRUSION_ALERT: Vẫn ở trong vùng cấm (Cập nhật Cooldown)
-    INTRUSION_ALERT --> NORMAL: Rời khỏi vùng cấm ROI
+    NORMAL --> FALLING_ALERT: Máy trạng thái té ngã xác nhận (FALL_LATCHED)
+    FALLING_ALERT --> NORMAL: Đứng dậy ổn định đủ 0,5 giây
 
-    NORMAL --> LOITERING_MONITORING: Đi vào vùng giám sát lảng vảng (Ghi nhận zone_entry_time)
-    LOITERING_MONITORING --> LOITERING_ALERT: Thời gian cư trú >= 10s VÀ Bán kính dịch chuyển <= R_thresh
-    LOITERING_ALERT --> LOITERING_ALERT: Tiếp tục đứng lảng vảng (Cập nhật Cooldown)
-    LOITERING_MONITORING --> NORMAL: Rời khỏi vùng giám sát trước khi hết 10s
-    LOITERING_ALERT --> NORMAL: Rời khỏi vùng giám sát
+    NORMAL --> FIGHTING_SUSPECT: Cặp người có dấu hiệu xô xát, chưa đủ thời gian xác nhận
+    FIGHTING_SUSPECT --> FIGHTING_ALERT: Dấu hiệu kéo dài đủ thời gian xác nhận
+    FIGHTING_SUSPECT --> NORMAL: Dấu hiệu biến mất
+    FIGHTING_ALERT --> NORMAL: Hết thời gian giữ cảnh báo (1,5 giây)
 
-    NORMAL --> RUNNING_ALERT: V_norm >= 1.5 BH/s VÀ Trục lưng nghiêng 15°-25°
-    RUNNING_ALERT --> NORMAL: Vận tốc giảm về mức đi bộ thông thường
-
-    NORMAL --> POTENTIAL_FALL: AR <= 0.8 HOẶC Góc trục thân θ < 40° (Tier 1 Triggered)
-    POTENTIAL_FALL --> FALL_CONFIRMED: Bi-LSTM Verifier xác nhận xác suất Ngã >= 0.85
-    POTENTIAL_FALL --> NORMAL: Bi-LSTM phân loại là Cúi nhặt đồ / Ngồi xổm (False Alarm Filtered)
-
-    NORMAL --> LOST: Không khớp được Bbox trong 30 khung hình liên tiếp
-    LOST --> NORMAL: Tái bắt vết thành công (Re-identified)
-    LOST --> PURGED: Mất dấu quá 5 giây (Giải phóng bộ nhớ)
-    PURGED --> [*]
+    NORMAL --> [*]: Mất dấu quá 5 giây
 ```
+
+**Thứ tự ưu tiên** khi nhiều hành vi cùng xảy ra:
+1. **Té ngã** được xét trước. Khi một người đang ở bất kỳ pha nào của máy trạng thái té ngã, hành vi chạy không được xét cho người đó (cú ngã luôn kèm chuyển động nhanh).
+2. **Đánh nhau** được xét sau cho từng cặp; nó có thể ghi đè trạng thái chạy nhưng **không** ghi đè trạng thái té ngã đã khoá.
+
+Màu khung trên video: xanh lá (bình thường), cam (chạy), đỏ (ngã), vàng (nghi đánh nhau), tím (đánh nhau).
 
 ---
 
-### 3.2.3. Lưu đồ thuật toán và Mã giả phát hiện Xâm nhập & Lảng vảng
+## 3.3. Thuật toán phát hiện té ngã (`src/behaviors/fall_fsm.py`)
 
-#### Lưu đồ thuật toán (Flowchart)
+Các đại lượng $AR$, $\theta$, $H_{ref}$, $r$, $V_y$, $V_{top}$ và hai nhóm điều kiện *va chạm*, *tư thế thấp* được định nghĩa ở mục 2.3.3.
+
+### 3.3.1. Máy trạng thái bốn pha
+
+```mermaid
+stateDiagram-v2
+    [*] --> NORMAL
+    NORMAL --> IMPACT_PENDING: Va chạm (hạ người nhanh)
+    IMPACT_PENDING --> LYING_VERIFY: Tư thế thấp
+    LYING_VERIFY --> IMPACT_PENDING: Tư thế trở lại bình thường (đếm lại)
+    IMPACT_PENDING --> NORMAL: Quá 1,2 giây kể từ va chạm
+    LYING_VERIFY --> NORMAL: Quá 1,2 giây kể từ va chạm
+    LYING_VERIFY --> FALL_LATCHED: Tư thế thấp liên tục 0,5 giây (và Tier 2 chấp nhận, nếu bật)
+    FALL_LATCHED --> NORMAL: Đứng dậy ổn định 0,5 giây
+```
+
+| Pha | Ý nghĩa | Điều kiện rời pha |
+| :--- | :--- | :--- |
+| `NORMAL` | Bình thường. Khi người đang đứng ($AR > 1{,}3$), hệ thống học chiều cao tham chiếu $H_{ref}$ (cần tối thiểu 0,3 giây quan sát). | Có *va chạm* → `IMPACT_PENDING`. |
+| `IMPACT_PENDING` | Vừa hạ người nhanh, mở cửa sổ 1,2 giây chờ xem có nằm xuống không. $H_{ref}$ bị đóng băng. | *Tư thế thấp* → `LYING_VERIFY`. Hết cửa sổ → `NORMAL`. |
+| `LYING_VERIFY` | Đang ở tư thế thấp, đếm thời gian. | Thấp liên tục 0,5 giây → xác nhận. Tư thế hết thấp → quay lại `IMPACT_PENDING`, bộ đếm bắt đầu lại. |
+| `FALL_LATCHED` | Đã xác nhận ngã. Cảnh báo được **giữ** cho đến khi người đứng dậy. | $AR > 1{,}2$ và $r > 0{,}8$ và góc thân hết nằm ngang, liên tục 0,5 giây → `NORMAL`. |
+
+### 3.3.2. Các xử lý biên
+
+- **Khoảng trống quan sát:** nếu hai lần quan sát liên tiếp của một người cách nhau quá 0,3 giây, nghi vấn chưa xác nhận bị huỷ; cảnh báo đã khoá thì vẫn giữ.
+- **Cooldown:** mỗi người chỉ phát một cảnh báo ngã trong 15 giây.
+- **Điểm tin cậy:** khi không dùng Tier 2, cảnh báo mang điểm cố định 0,9. Đây là điểm quy ước, **không phải xác suất** đã hiệu chuẩn.
+
+Mô tả chi tiết hơn và danh sách các trường hợp cần thử: `docs/fall_fsm.md`.
+
+### 3.3.3. Tầng xác minh Bi-LSTM (Tier 2) — đã thiết kế, chưa hoàn thành
+
+**Thiết kế:** khi máy trạng thái sắp xác nhận ngã, lấy 30 bộ khớp gần nhất, chuẩn hoá theo gốc hông và chiều cao khung (mục 2.4.1) thành ma trận $30 \times 34$, đưa qua mạng:
+
+| Tầng | Cấu hình | Đầu ra |
+| :--- | :--- | :--- |
+| Bi-LSTM | 1 lớp, 64 đơn vị mỗi chiều | `(batch, 30, 128)`, lấy bước cuối → `(batch, 128)` |
+| Dropout | 0,3 | `(batch, 128)` |
+| Linear | 128 → 3 | Điểm 3 lớp: Bình thường, Chạy, Ngã |
+
+Chỉ xác nhận ngã khi $P(\text{Ngã}) \ge 0{,}85$ (`bilstm_fall_threshold`).
+
+**Trạng thái:** tắt (`enable_bilstm_tier2: false`). File `weights/fall_bilstm.pt` hiện có **không được huấn luyện bằng dữ liệu thật** và không được dùng.
+
+**Các vấn đề phải giải quyết trước khi bật:**
+1. Chưa có tập dữ liệu khớp xương có nhãn.
+2. Script trích xuất lấy mọi khung hình ở FPS gốc của video, trong khi lúc chạy thật 30 bộ khớp gần nhất tương ứng với khoảng thời gian khác (khâu AI chạy khoảng 20 FPS trên CPU của máy thử, và thấp hơn khi có nhiều người). Cần lấy mẫu lại theo thời gian để hai bên khớp nhau.
+3. Lịch sử khớp bị xoá khi mất khớp quá 0,25 giây, nên ngay sau cú ngã thường không đủ 30 bộ khớp và sự kiện sẽ bị từ chối.
+4. Chia tập huấn luyện/kiểm tra phải theo **video**, không theo cửa sổ trượt, vì các cửa sổ chồng lên nhau.
+
+---
+
+## 3.4. Thuật toán phát hiện chạy nhanh (`src/behaviors/fall_run.py`)
+
 ```mermaid
 flowchart TD
-    Start([Bắt đầu frame mới]) --> GetTracks[Lấy danh sách Tracks từ ByteTrack + TrackHistory Manager]
-    GetTracks --> LoopTracks{Còn track chưa duyệt?}
-    
-    LoopTracks -- Hết --> PurgeLost["Quét dọn Tracks quá hạn TTL (Mất dấu > 5s)"]
-    PurgeLost --> End([Kết thúc frame])
-    LoopTracks -- Còn --> SelectTrack[Chọn đối tượng track_id]
-
-    SelectTrack --> CalcFoot["Tính tọa độ chân: Foot = ((x1+x2)/2, y2)"]
-    CalcFoot --> CheckPiP{"cv2.pointPolygonTest(ROI, Foot) >= 0?"}
-
-    %% Nhánh kiểm tra NẰM TRONG ROI
-    CheckPiP -- Đúng: Nằm trong ROI --> UpdateSeenInZone["Cập nhật last_seen_inside_zone = curr_time<br>Nếu zone_entry_time is None: entry_time = curr_time"]
-    UpdateSeenInZone --> HandleIntrusion["Kiểm tra XÂM NHẬP (Cooldown 5s)"]
-    HandleIntrusion --> CalcDwell["dwell_time = curr_time - zone_entry_time"]
-    CalcDwell --> CheckDwellTime{"dwell_time >= Thresh_Loiter (10s)?"}
-    
-    CheckDwellTime -- Chưa đủ 10s --> NextTrack[Chuyển sang track tiếp theo]
-    CheckDwellTime -- Đã quá 10s --> CalcDisplacement["Tính bán kính di chuyển R = max(||P_i - P_mean||)"]
-    CalcDisplacement --> CheckRadius{"R <= Max_Radius (50px)?"}
-    CheckRadius -- Lớn hơn: Đi xuyên qua --> NextTrack
-    CheckRadius -- Nhỏ hơn: Quẩn quanh --> CheckCooldownLoiter{"Hết Cooldown lảng vảng (10s)?"}
-    CheckCooldownLoiter -- Thỏa mãn --> FireLoiterAlert["Phát tín hiệu: BÁO ĐỘNG LẢNG VẢNG!<br>Lưu DB, Gửi WebSocket"]
-    CheckCooldownLoiter -- Chưa hết cooldown --> NextTrack
-    FireLoiterAlert --> NextTrack
-
-    %% Nhánh kiểm tra NẰM NGOÀI ROI HOẶC BỊ CHE KHUẤT TẠM THỜI (LOST)
-    CheckPiP -- Sai: Nằm ngoài ROI --> CheckGracePeriod{"(curr_time - last_seen_inside_zone) <= Grace_Period (2.0s)?"}
-    CheckGracePeriod -- Đúng: Còn trong thời gian gia hạn --> PreserveTimer["BẢO LƯU BỘ ĐẾM LẢNG VẢNG<br>(Chống rung biên Bbox / Che khuất ngắn)"]
-    PreserveTimer --> NextTrack
-    CheckGracePeriod -- Sai: Đã rời đi hẳn quá 2.0s --> ResetZone["Chính thức Reset: zone_entry_time = None<br>Đặt trạng thái: NORMAL"]
-    ResetZone --> NextTrack
-    NextTrack --> LoopTracks
+    A[Khung hình mới của một người] --> B{Đang trong pha nghi/đã ngã?}
+    B -- Có --> Z[Không xét chạy, đặt bộ đếm về 0]
+    B -- Không --> C["Tính V_norm trên cửa sổ 0,5 giây"]
+    C --> D{"Đủ dữ liệu? (≥ 4 khung, phủ đủ 0,5 giây)"}
+    D -- Không --> Z
+    D -- Có --> E{"V_norm ≥ 1,5 VÀ (Lean ≥ 15° HOẶC V_norm ≥ 2,25)"}
+    E -- Không --> Z
+    E -- Có --> F[Tăng bộ đếm liên tiếp]
+    F --> G{"Bộ đếm ≥ 3?"}
+    G -- Chưa --> H[Chờ khung tiếp theo]
+    G -- Rồi --> I["Trạng thái RUNNING_ALERT"]
+    I --> J{"Hết cooldown 4 giây?"}
+    J -- Rồi --> K[Phát cảnh báo RUNNING]
 ```
 
-#### Mã giả (Structured Pseudocode với Cơ chế Debounce Grace Period)
-```python
-EXIT_GRACE_PERIOD = 2.0  # Thời gian gia hạn 2 giây chống rung biên và che khuất
-TRACK_TTL = 5.0          # Time-to-Live: xóa track nếu mất dấu quá 5 giây
+Công thức $V_{norm}$ và độ đổ người: mục 2.3.2. Điểm tin cậy của cảnh báo là $\min(1, V_{norm} / 2{,}5)$ (điểm quy ước).
 
-def process_spatial_temporal_behaviors(tracks, roi_polygons, current_timestamp, track_manager):
-    # 1. Cập nhật các track nhìn thấy ở frame hiện tại
-    active_track_ids = set()
-    for track in tracks:
-        track_id = track.id
-        active_track_ids.add(track_id)
-        
-        # Lấy hoặc khởi tạo hồ sơ lưu trữ bền vững (Persistent TrackHistory)
-        history = track_manager.get_or_create(track_id, current_timestamp)
-        history.last_seen = current_timestamp
-        
-        x1, y1, x2, y2 = track.tlbr
-        foot_point = ((x1 + x2) / 2.0, y2)
-        history.foot_positions.append(foot_point)
-        
-        is_inside_any_zone = False
-        for zone in roi_polygons:
-            if cv2.pointPolygonTest(zone.polygon_np, foot_point, False) >= 0:
-                is_inside_any_zone = True
-                history.last_seen_inside_zone = current_timestamp
-                
-                # Bắt đầu tính giờ vào vùng (nếu trước đó chưa có)
-                if history.zone_entry_time is None:
-                    history.zone_entry_time = current_timestamp
-                
-                # --- XỬ LÝ HÀNH VI XÂM NHẬP ---
-                if zone.type == "RESTRICTED_INTRUSION":
-                    if can_fire_alert(track_id, "INTRUSION", current_timestamp, cooldown=5.0):
-                        trigger_alert(event="INTRUSION", track_id=track_id, zone_id=zone.id)
-                
-                # --- XỬ LÝ HÀNH VI LẢNG VẢNG ---
-                if zone.type == "LOITERING_ZONE":
-                    dwell_time = current_timestamp - history.zone_entry_time
-                    if dwell_time >= zone.loiter_threshold:
-                        if compute_trajectory_displacement(history.foot_positions) <= zone.radius_limit:
-                            if can_fire_alert(track_id, "LOITERING", current_timestamp, cooldown=10.0):
-                                trigger_alert(event="LOITERING", track_id=track_id, zone_id=zone.id, duration=dwell_time)
-                break
-        
-        # XỬ LÝ KHI CHÂN TẠM THỜI RA NGOÀI VÙNG ROI (Chống rung lắc biên Bbox)
-        if not is_inside_any_zone:
-            time_since_exit = current_timestamp - history.last_seen_inside_zone
-            # Chỉ reset bộ đếm khi đối tượng thực sự rời đi vượt quá Grace Period (2 giây)
-            if time_since_exit > EXIT_GRACE_PERIOD:
-                history.zone_entry_time = None
-                history.current_zone_id = None
+Tham số trong `configs/config.yaml`, mục `behaviors.running`:
 
-    # 2. Quét dọn bộ nhớ TrackHistory (Garbage Collection / TTL Cleanup)
-    for tid, hist in list(track_manager.all_tracks.items()):
-        # Nếu track bị ByteTrack đánh dấu LOST quá lâu (vượt quá TTL 5 giây)
-        if current_timestamp - hist.last_seen > TRACK_TTL:
-            track_manager.delete_track(tid)
-```
-
-> [!IMPORTANT]
-> **Giải pháp kỹ thuật loại trừ lỗi mất dấu thời gian (Hysteresis & Grace Buffer):**
-> 1. **Triệt tiêu rung lắc biên (Boundary Jitter):** Khi đối tượng đứng ngay trên ranh giới vùng cấm, tọa độ Bounding box dao động $\pm 2$ pixel giữa các frame có thể làm điểm chân lúc lọt vào trong, lúc ra ngoài. Nhờ khoảng đệm `EXIT_GRACE_PERIOD = 2.0s`, bộ đếm thời gian lưu trú không bao giờ bị reset oan uổng.
-> 2. **Duy trì bộ nhớ khi bị che khuất tạm thời (Lost Track Preservation):** Khi có người đi ngang qua che khuất đối tượng trong $0.5 - 1.5\text{s}$, ByteTrack giữ track ở trạng thái `LOST`. Hồ sơ `TrackHistory` vẫn bảo lưu `zone_entry_time`. Khi đối tượng tái xuất hiện (Re-ID thành công), bộ đếm 9 giây vẫn tiếp tục nhảy lên 10 giây và kích hoạt cảnh báo lảng vảng hoàn toàn chính xác!
+| Tham số | Mặc định | Ý nghĩa |
+| :--- | :---: | :--- |
+| `v_norm_threshold` | 1,5 | Ngưỡng vận tốc (BH/s) |
+| `body_lean_min` | 15,0 | Độ đổ người tối thiểu (độ); bỏ qua nếu vận tốc ≥ 1,5 lần ngưỡng |
+| `window_seconds` | 0,5 | Cửa sổ đo vận tốc |
+| `confirm_frames` | 3 | Số lần đo liên tiếp vượt ngưỡng |
+| `cooldown_seconds` | 4,0 | Khoảng cách tối thiểu giữa hai cảnh báo của cùng một người |
 
 ---
 
-## 3.3. Thiết kế thuật toán phát hiện chuyển động bất thường và té ngã
+## 3.5. Thuật toán phát hiện đánh nhau (`src/behaviors/fighting.py`)
 
-Để triệt tiêu cảnh báo giả mà vẫn đảm bảo tốc độ thời gian thực, hệ thống áp dụng kiến trúc phối hợp **2 tầng (Two-Tier Hybrid Architecture)**:
+### 3.5.1. Ba dấu hiệu
+
+Với mỗi cặp người, sau khi loại các cặp chênh lệch phối cảnh (mục 2.3.4), hệ thống xét ba dấu hiệu. Ký hiệu $V_{th}$ = `limb_speed_threshold` (2,1 BH/s) và $V_{limb}$ là giá trị lớn hơn trong hai người.
+
+| Dấu hiệu | Điều kiện |
+| :--- | :--- |
+| **Ra đòn** | Hai người gần nhau ($D_{norm} \le 1{,}15$ hoặc $IoU \ge 0{,}05$) **và** tay/chân vươn tới đối phương (trúng vùng đầu/thân/đá, hoặc $IoU \ge 0{,}05$, hoặc $D_{norm} \le 0{,}8$) **và** $V_{limb} \ge V_{th}$ |
+| **Vật lộn** | Chồng lấn sâu ($IoU \ge 0{,}14$ hoặc $D_{norm} \le 0{,}62$) **và** thân giật lắc $A_{torso} \ge 1{,}15$ BH/s **và** $V_{limb} \ge 0{,}6 \cdot V_{th}$ |
+| **Lao vào nhau** | $D_{norm} \le 0{,}85$ **và** vận tốc áp sát $V_{close} \ge 1{,}35$ BH/s **và** $V_{limb} \ge 0{,}75 \cdot V_{th}$ |
+
+Cặp người được coi là **đang xô xát tại thời điểm đó** nếu có ít nhất một dấu hiệu.
+
+### 3.5.2. Xác nhận, giữ cảnh báo và cooldown
 
 ```mermaid
-flowchart LR
-    subgraph TIER1["TIER 1: BỘ LỌC ĐỘNG HỌC NHANH (Fast Rule-based Gatekeeper)"]
-        direction TB
-        F1["V_norm >= 1.5 BH/s (Chạy)"]
-        F2["Tỷ lệ Aspect Ratio AR = H/W <= 0.8"]
-        F3["Góc trục thân θ < 40° so với phương ngang"]
-        F4["Vận tốc rơi thẳng đứng Vy >= 0.8 H/s"]
-    end
-
-    subgraph TIER2["TIER 2: BỘ XÁC THỰC SÂU (Deep Bi-LSTM Verifier)"]
-        direction TB
-        S1["Trích xuất cửa sổ trượt T = 30 frames (17 Keypoints)"]
-        S2["Chuẩn hóa Root-Relative theo tâm khớp hông"]
-        S3["Nạp vào mạng Bi-LSTM (Kích thước 30x34)"]
-        S4["Softmax: P(Ngã) >= 0.85?"]
-    end
-
-    Input["Dữ liệu từ YOLO-Pose & ByteTrack"] --> TIER1
-    F1 -->|"Thỏa mãn tiêu chuẩn Chạy"| AlertRun["BÁO ĐỘNG CHẠY BẤT THƯỜNG"]
-    F2 & F3 & F4 -->|"Xuất hiện dấu hiệu sụp đổ tư thế"| Trigger["Kích hoạt Tier 2 (Chỉ chạy khi có nghi vấn)"]
-    Trigger --> TIER2
-    S4 -- Đúng --> AlertFall["XÁC NHẬN BÁO ĐỘNG TÉ NGÃ!"]
-    S4 -- Sai: P(Normal) cao --> Drop["Hủy cảnh báo giả (False Alarm)"]
+flowchart TD
+    A[Một cặp người tại khung hình hiện tại] --> B{Có ít nhất một dấu hiệu?}
+    B -- Không --> C[Xoá mốc bắt đầu nghi vấn]
+    B -- Có --> D[Ghi mốc bắt đầu nghi vấn nếu chưa có]
+    D --> E{"Dấu hiệu kéo dài ≥ 0,15 giây?"}
+    E -- Chưa --> F["Hai người: FIGHTING_SUSPECT"]
+    E -- Rồi --> G["Gia hạn giữ cảnh báo thêm 1,5 giây"]
+    G --> H["Hai người: FIGHTING_ALERT, vẽ khung bao vùng xô xát"]
+    H --> I{"Hết cooldown 6 giây?"}
+    I -- Rồi --> J[Phát cảnh báo FIGHTING kèm mô tả]
 ```
 
-### 3.3.1. Phân tầng logic chi tiết
-- **Tier 1 (Fast Gatekeeper - Chạy mỗi frame, tốn $< 0.2\text{ms}$):**
-  - Đóng vai trò là "người gác cổng" kiểm tra sơ bộ các đại lượng toán học và hình học thuần túy.
-  - Bình thường khi con người đi lại, đứng ngồi tự nhiên, tầng này trả về `False` ngay lập tức. Tầng 2 hoàn toàn **không cần chạy**, tiết kiệm hơn 95% công suất tính toán cho card đồ họa GPU.
-- **Tier 2 (Deep Bi-LSTM Verifier - Chỉ chạy khi có kích hoạt từ Tier 1):**
-  - Khi đối tượng có cú sụp đổ hình thể đột ngột (thỏa mãn chỉ số $AR \le 0.8$ hoặc $\theta < 40^\circ$), hệ thống lấy dữ liệu 30 frame gần nhất từ `track.keypoints_history`.
-  - Mạng Bi-LSTM đánh giá biến thiên của chuỗi chuyển động trong 1 giây qua. Nếu mô hình nhận thấy có giai đoạn *mất kiểm soát gia tốc rơi tự do* trước khi tiếp đất $\rightarrow$ Khẳng định **Ngã thật**. Nếu đối tượng cúi từ từ xuống nhặt chìa khóa rơi hoặc chủ động ngồi bệt $\rightarrow$ Bác bỏ cảnh báo.
+- **Xác nhận theo thời gian** (`confirm_seconds = 0,15`) thay cho đếm khung hình, để kết quả ổn định khi FPS của khâu AI thay đổi.
+- **Giữ cảnh báo** (`hold_seconds = 1,5`): vùng cảnh báo được giữ kể cả khi tín hiệu tạm mất hoặc ByteTrack tạm mất dấu một trong hai người.
+- **Cooldown** (`cooldown_seconds = 6`) tính theo người có ID nhỏ hơn trong cặp.
+- **Mô tả cảnh báo** được sinh theo dấu hiệu: đòn vào vùng đầu, cú đá, lao vào xô xát, giằng co vật lộn, hoặc vung tay.
+- Cảnh báo đánh nhau được phát **sau** khi khung hình đã vẽ khung bao và banner, để ảnh bằng chứng thể hiện rõ vùng xô xát.
 
-### 3.3.2. Thiết kế bộ trích xuất đặc trưng Root-Relative và kiến trúc mạng Bi-LSTM
+### 3.5.3. Giới hạn của phương pháp
 
-#### A. Công thức chuẩn hóa Root-Relative
-Để mô hình học sâu không bị phụ thuộc vào vị trí của người trên khung hình (đứng ở góc trái hay góc phải camera) cũng như kích thước người do xa/gần, hệ thống chuẩn hóa 17 điểm khớp xương về hệ tọa độ cục bộ gắn với trọng tâm cơ thể:
-- **Tọa độ gốc (Root Joint):** Lấy trung điểm giữa khớp hông trái (Keypoint 11) và hông phải (Keypoint 12):
-  $$x_{root} = \frac{x_{11} + x_{12}}{2}, \quad y_{root} = \frac{y_{11} + y_{12}}{2}$$
-- **Tọa độ chuẩn hóa của từng điểm khớp $k \in [1, 17]$:**
-  $$x'_k = \frac{x_k - x_{root}}{H}, \quad y'_k = \frac{y_k - y_{root}}{H}$$
-  *(Trong đó $H$ là chiều cao Bounding Box của đối tượng ở frame tương ứng).*
-- **Vector đặc trưng mỗi frame:** $\mathbf{f}_t = [x'_1, y'_1, x'_2, y'_2, \dots, x'_{17}, y'_{17}]^T \in \mathbb{R}^{34}$.
-- **Ma trận đầu vào cửa sổ trượt $T = 30$ frames:** $\mathbf{X} = [\mathbf{f}_1, \mathbf{f}_2, \dots, \mathbf{f}_{30}]^T \in \mathbb{R}^{30 \times 34}$.
+Phương pháp cần **hai khung người riêng biệt**. Khi hai người vật lộn sát nhau hoặc nằm trên sàn, YOLO thường gộp họ thành một khung, và khi đó không còn cặp nào để xét. Trên clip mẫu `fight1.mp4` (vật lộn dưới sàn, 19 giây) hệ thống chỉ giữ được trạng thái cảnh báo trong một đoạn rất ngắn ở đầu clip. Ngoài ra chưa có bộ video âm tính (ôm, bắt tay, nhảy, thể thao) để đo tỷ lệ báo động giả.
 
-#### B. Bảng cấu trúc mạng nơ-ron tự huấn luyện (Bi-LSTM Verifier Architecture)
-Kiến trúc mạng được thiết kế tối ưu, gọn nhẹ để có thể suy luận trực tiếp trên CPU/GPU thời gian thực trong chưa đầy $3\text{ms}$:
-
-| STT | Tầng (Layer) | Loại tầng (Type) | Cấu hình tham số (Configuration) | Kích thước đầu ra (Output Shape) | Vai trò chức năng |
-| :---: | :--- | :--- | :--- | :--- | :--- |
-| **1** | **InputLayer** | `Input` | $T = 30\text{ frames}, F = 34\text{ features}$ | `(None, 30, 34)` | Tiếp nhận ma trận chuỗi 17 khớp xương chuẩn hóa |
-| **2** | **Bi-LSTM** | `Bidirectional(LSTM)` | 64 units mỗi chiều (Forward 64 + Backward 64), `return_sequences=False` | `(None, 128)` | Học ngữ cảnh biến thiên tư thế hai chiều theo trục thời gian |
-| **3** | **Regularization** | `Dropout` | `rate = 0.3` | `(None, 128)` | Chống hiện tượng quá khớp (Overfitting) trên dữ liệu thực |
-| **4** | **OutputLayer** | `Dense` | 3 units, activation = `'softmax'` | `(None, 3)` | Phân phối xác suất 3 lớp: `[Normal (Bình thường / Cúi), Running (Chạy), Falling (Té ngã)]` |
-
-> $\rightarrow$ Khi xác suất lớp `Falling` vượt ngưỡng tin cậy $P(\text{Falling}) \ge 0.85$, hệ thống mới kích hoạt cảnh báo đỏ; ngược lại nếu $P(\text{Normal})$ chiếm ưu thế (đối tượng chỉ cúi nhặt đồ hoặc ngồi nghỉ), sự kiện bị hủy bỏ ngay tại tầng suy luận.
+Hướng cải thiện đang được cân nhắc: giữ các luật trên làm bước khoanh vùng nghi vấn, rồi dùng một mô hình phân loại clip ngắn trên vùng ảnh gộp của hai người để quyết định.
 
 ---
 
-## 3.4. Thiết kế cơ sở dữ liệu lưu trữ sự kiện và cơ chế cảnh báo
+## 3.6. Cảnh báo, lưu trữ và giao diện
 
-### 3.4.1. Cơ chế Chống Spam Cảnh báo (Cooldown Mechanism)
-Nếu một đối tượng đứng lảng vảng trong vùng cấm suốt 1 phút, hệ thống camera chạy 25 FPS sẽ kiểm tra điều kiện $25 \times 60 = 1.500$ lần. Nếu không có bộ kiểm soát cooldown, hệ thống sẽ **bắn ra 1.500 bản ghi cảnh báo**, gây sập cơ sở dữ liệu và làm tràn ngập màn hình nhân viên an ninh.
+### 3.6.1. Chống lặp cảnh báo (Cooldown)
 
-**Quy tắc Cooldown theo cặp khóa `(track_id, event_type)`:**
-- Khi một sự kiện loại $E$ của đối tượng mang mã $ID$ được kích hoạt tại thời điểm $t_{now}$:
-  $$\text{CanTrigger} = (t_{now} - \text{last\_alert\_time}[ID][E]) \ge T_{cooldown}(E)$$
-- **Bảng ngưỡng thời gian Cooldown đề xuất:**
-  - `INTRUSION` (Xâm nhập): $T_{cooldown} = 5.0 \text{ giây}$.
-  - `LOITERING` (Lảng vảng): $T_{cooldown} = 10.0 \text{ giây}$.
-  - `RUNNING` (Chạy bứt tốc): $T_{cooldown} = 4.0 \text{ giây}$.
-  - `FALL` (Té ngã): $T_{cooldown} = 15.0 \text{ giây}$ (để nhân viên kịp xử lý hiện trường, tránh kêu chuông lặp lại liên tục khi người bị ngã vẫn đang nằm bất động).
+Khâu AI kiểm tra điều kiện ở mọi khung hình; nếu không giới hạn, một hành vi kéo dài sẽ sinh hàng trăm cảnh báo. Mỗi `TrackHistory` lưu mốc cảnh báo gần nhất theo từng loại:
 
----
+$$\text{Được phát} = (t_{now} - t_{last}[\text{loại}]) \ge T_{cooldown}(\text{loại})$$
 
-### 3.4.2. Thiết kế Lược đồ Cơ sở dữ liệu (Database Schema)
+| Loại sự kiện | Cooldown |
+| :--- | :---: |
+| `RUNNING` | 4 giây |
+| `FALLING` | 15 giây |
+| `FIGHTING` | 6 giây |
 
-Hệ thống sử dụng cơ sở dữ liệu quan hệ (SQLite cho bản gọn / PostgreSQL cho triển khai quy mô lớn) gồm 3 bảng chính:
+Lưu ý: cooldown gắn với `track_id`. Nếu ByteTrack đổi ID của cùng một người, cảnh báo có thể lặp lại.
+
+### 3.6.2. Xử lý một cảnh báo (`src/core/alert_manager.py`)
+
+Trên một luồng nền, theo thứ tự:
+1. Ghi ảnh bằng chứng `data/snapshots/<LOẠI>_<track_id>_<thời gian>.jpg` (khung hình đã vẽ khung người và khớp xương).
+2. Ghi một dòng vào bảng `events` của SQLite.
+3. Đẩy gói tin JSON qua WebSocket tới mọi dashboard đang mở:
+
+```json
+{
+  "event_type": "RUNNING | FALLING | FIGHTING",
+  "track_id": 3,
+  "zone_id": "N/A",
+  "confidence": 90.0,
+  "timestamp": "2026-11-11 10:30:00",
+  "snapshot_url": "/snapshots/FALLING_3_1793400000.jpg",
+  "extra_info": "Mô tả sự kiện"
+}
+```
+
+Trường `zone_id` là di sản của thiết kế cũ, luôn mang giá trị `"N/A"`.
+
+### 3.6.3. Cơ sở dữ liệu (`src/database/db_service.py`)
+
+SQLite, file `data/surveillance.db`, tự tạo khi chạy lần đầu.
 
 ```mermaid
 erDiagram
-    ZONES ||--o{ EVENTS : "xảy ra tại"
-    TRACKS ||--o{ EVENTS : "thực hiện bởi"
-
-    ZONES {
-        string zone_id PK "Mã định danh vùng cấm (vd: ZONE_01)"
-        string zone_name "Tên hiển thị (vd: Cổng bảo vệ, Bờ rào)"
-        string zone_type "Loại vùng: INTRUSION hoặc LOITERING"
-        text polygon_points "Tọa độ đa giác JSON: [[x1,y1],[x2,y2],...]"
-        float loiter_threshold "Ngưỡng thời gian lảng vảng (giây)"
-        datetime created_at "Thời điểm tạo vùng"
-    }
-
-    TRACKS {
-        int track_id PK "Mã ID đối tượng sinh ra từ ByteTrack"
-        datetime first_seen "Thời điểm phát hiện đầu tiên"
-        datetime last_seen "Thời điểm khung hình cuối cùng"
-        string final_status "Trạng thái kết thúc: EXITED, PURGED"
-    }
-
     EVENTS {
-        int event_id PK "Mã tăng tự động của sự kiện"
-        int track_id FK "Liên kết mã đối tượng"
-        string zone_id FK "Liên kết mã vùng (có thể Null nếu Chạy/Ngã)"
-        string event_type "Loại: INTRUSION, LOITERING, RUNNING, FALL"
-        float confidence "Độ tin cậy của thuật toán / mô hình"
-        string snapshot_path "Đường dẫn file ảnh bằng chứng JPEG"
-        datetime timestamp "Thời điểm chính xác xảy ra sự kiện"
-        string resolution_status "Trạng thái: PENDING, ACKNOWLEDGED, RESOLVED"
+        int event_id PK "Tự tăng"
+        int track_id "ID người từ ByteTrack"
+        string zone_id "Không dùng (luôn rỗng)"
+        string event_type "RUNNING, FALLING, FIGHTING"
+        float confidence "Điểm quy ước 0..1"
+        string snapshot_path "Đường dẫn ảnh bằng chứng"
+        string timestamp "Thời điểm phát cảnh báo"
+        string extra_info "Mô tả sự kiện"
+        string resolution_status "Mặc định PENDING, chưa có chức năng cập nhật"
+    }
+    TRACKS {
+        int track_id PK
+        datetime first_seen
+        datetime last_seen
+        string final_status
     }
 ```
+
+- Bảng `tracks` được tạo nhưng **chưa có mã nào ghi vào**.
+- Cột `resolution_status` chưa được dùng: giao diện chưa có nút xác nhận đã xử lý.
+- Bộ đếm số cảnh báo theo loại được giữ trong RAM để vẽ lên video mà không truy vấn SQLite mỗi khung hình.
+
+### 3.6.4. Máy chủ web (`web/app.py`)
+
+| Đường dẫn | Phương thức | Chức năng |
+| :--- | :---: | :--- |
+| `/` | GET | Trang dashboard |
+| `/video_feed` | GET | Luồng MJPEG của video đã vẽ khung |
+| `/ws/alerts` | WebSocket | Kênh đẩy cảnh báo thời gian thực |
+| `/api/events` | GET | 30 cảnh báo gần nhất (cùng định dạng với gói tin WebSocket) |
+| `/api/events/stats` | GET | Tổng số cảnh báo và số theo từng loại |
+| `/api/change_source` | POST | Đổi nguồn video. Nguồn mới mở lỗi thì giữ nguồn cũ và trả mã 400 |
+| `/api/upload_video` | POST | Tải video lên (`.mp4`, `.avi`, `.mov`, `.mkv`) và phát luôn |
+| `/snapshots/...` | GET | Ảnh bằng chứng |
+
+Máy chủ không có xác thực người dùng; chỉ nên chạy trong mạng nội bộ.
+
+### 3.6.5. Giao diện dashboard (`web/templates/index.html`, `web/static/`)
+
+```text
++--------------------------------------------------------------------------------------+
+|  HỆ THỐNG GIÁM SÁT (tiêu đề)                                   ONLINE   | 10:30:00   |
++--------------------------------------------------------------------------------------+
+| [A] VIDEO TRỰC TIẾP                                | [B] CẢNH BÁO TỨC THỜI           |
+|                                                    | +-----------------------------+ |
+|   khung người + ID + trạng thái + 17 khớp xương    | | [ảnh] TÉ NGÃ (ID #1)   90%  | |
+|   số đo chẩn đoán cạnh từng người (tắt được)       | |       2026-11-11 10:30:00   | |
+|   banner cảnh báo hiện 4 giây khi có sự kiện       | |       mô tả sự kiện         | |
+|                                                    | +-----------------------------+ |
+| Nguồn video: [danh sách v]   [Tải video lên]       | | ...                         | |
++--------------------------------------------------------------------------------------+
+| [C] Chạy: 0 | Té ngã: 0 | Ẩu đả: 0                                                   |
++--------------------------------------------------------------------------------------+
+```
+
+- **[A] Video:** luồng MJPEG. Trên video có bảng thông số (FPS của khâu AI, số người, tổng số cảnh báo). Tuỳ chọn `system.debug_overlay` hiện các số đo chẩn đoán cạnh từng người (AR, góc thân, vận tốc, tiến độ xác nhận), hữu ích khi chỉnh ngưỡng.
+- **[B] Cột cảnh báo:** thẻ cảnh báo mới được chèn lên đầu, kèm ảnh thu nhỏ; bấm vào để xem ảnh lớn. Khi tải lại trang, lịch sử được nạp lại từ `/api/events`. Mỗi cảnh báo mới kèm âm thanh và giọng đọc tiếng Việt (nếu trình duyệt hỗ trợ).
+- **[C] Thanh thống kê:** số cảnh báo theo từng loại.
+- Kênh WebSocket tự kết nối lại khi mất kết nối.
 
 ---
 
-### 3.4.3. Thiết kế Giao diện Trung tâm chỉ huy (Command Dashboard Wireframe)
+## 3.7. Cấu hình (`configs/config.yaml`)
 
-Giao diện Web Dashboard được xây dựng tối ưu cho màn hình Full HD ($1920 \times 1080$), chia thành 3 phân vùng chức năng rõ ràng:
+| Mục | Nội dung |
+| :--- | :--- |
+| `system` | Thiết bị suy luận (`device`, tự lùi về CPU khi không có CUDA), ngưỡng tin cậy phát hiện người, đường dẫn mô hình, bật/tắt Tier 2, bật/tắt số đo chẩn đoán |
+| `camera` | Nguồn video, kích thước hàng đợi khung hình |
+| `tracking` | Giới hạn điền tạm khớp xương, thời gian sống của track |
+| `behaviors.running` | Ngưỡng chạy nhanh (mục 3.4) |
+| `behaviors.falling` | Ngưỡng và các khoảng thời gian của máy trạng thái té ngã (mục 3.3) |
+| `behaviors.fighting` | Ngưỡng đánh nhau (mục 3.5) |
+| `web` | Địa chỉ, cổng, thư mục ảnh bằng chứng |
 
-```text
-+-------------------------------------------------------------------------------------------------------+
-|  LOGO  | HỆ THỐNG TRINH SÁT AN NINH THỜI GIAN THỰC (AI SURVEILLANCE) | Status: ONLINE | FPS: 27.4    |
-+-------------------------------------------------------------------------------------------------------+
-| [A] KHUNG HIỂN THỊ CAMERA CHÍNH (70% WIDTH)          | [B] CỘT SỰ KIỆN THỜI GIAN THỰC (30% WIDTH)     |
-|                                                      | +-------------------------------------------+ |
-| +--------------------------------------------------+ | | DANH SÁCH BÁO ĐỘNG MỚI NHẤT (WEBSOCKET)   | |
-| | Live Stream: Cam-01 (Kho A - Hàng rào phía Tây)  | | +-------------------------------------------+ |
-| |                                                  | | [16:42:15] ⚠️ TÉ NGÃ (FALL DETECTED)         | |
-| |        (VÙNG CẤM ĐA GIÁC ĐỎ)                     | | - Đối tượng: Track ID #12                   | |
-| |       *-------------------*                      | | - Vị trí: Sảnh tầng 1 - Khu vực cầu thang   | |
-| |       |                   |   [Bbox ID: 05]      | | - Độ tin cậy: 92.4% (Tier 2 Verified)       | |
-| |       |  (Foot Point)     |     O  [Running]     | | [Ảnh thu nhỏ]  [Xác nhận] [Xem clip cắt]    | |
-| |       |       x           |    /|\               | +-------------------------------------------+ |
-| |       *-------------------*    / \               | | [16:41:50] 🚫 XÂM NHẬP VÙNG CẤM             | |
-| |   [Bbox ID: 03 - Intrusion Alert]                | | - Đối tượng: Track ID #03                   | |
-| |                                                  | | - Khu vực: Vùng cấm Kho A                   | |
-| +--------------------------------------------------+ | [Ảnh thu nhỏ]  [Xác nhận] [Xem clip cắt]    | |
-| CÔNG CỤ VẼ VÙNG:                                     | +-------------------------------------------+ |
-| [🖌️ Vẽ vùng ROI mới] [💾 Lưu vùng] [🗑️ Xóa vùng]     | | [16:40:02] ⏳ LẢNG VẢNG BẤT THƯỜNG          | |
-| Nguồn camera: [CAM-01 (RTSP) v] [Upload Video File]  | | - Đối tượng: Track ID #01 (Dwell: 14s)      | |
-+-------------------------------------------------------------------------------------------------------+
-| [C] THANH THỐNG KÊ NHANH & TÌNH TRẠNG HỆ THỐNG                                                       |
-| • Số người trong khung hình: 04  | • Tổng số cảnh báo hôm nay: 28 | • Xâm nhập: 12 | • Ngã: 02 | • Chạy: 05 |
-+-------------------------------------------------------------------------------------------------------+
-```
-
-- **Phân vùng [A] - Khu vực Luồng Camera trực tiếp:**
-  - Hiển thị video stream trực tiếp với overlay Bounding Box, Track ID, nhãn hành vi thời gian thực và 17 khớp xương người.
-  - Tích hợp công cụ tương tác chuột: Cho phép người vận hành nhấp chuột trực tiếp lên màn hình để định nghĩa các đỉnh của đa giác ROI vùng cấm mà không cần can thiệp vào file cấu hình code.
-- **Phân vùng [B] - Cột Sự kiện Thời gian thực (Real-time Event Feed):**
-  - Nhận thông điệp cảnh báo đẩy tức thời qua WebSocket.
-  - Hiển thị thẻ sự kiện theo màu độ nguy cấp (Đỏ: Ngã/Xâm nhập; Vàng: Lảng vảng; Cam: Chạy).
-  - Tích hợp ảnh thu nhỏ (snapshot) trích xuất tại đúng thời điểm vi phạm kèm nút bấm cho phép bảo vệ bấm nút "Xác nhận đã xử lý" (Acknowledge).
-- **Phân vùng [C] - Thanh Thống kê Nhanh:**
-  - Báo cáo số liệu thời gian thực: FPS xử lý của mô hình, số lượng người hiện diện trong khung nhìn, và tổng số sự kiện phân loại theo từng hành vi trong ca trực.
+Mỗi hành vi có khoá `enabled` để bật/tắt riêng.

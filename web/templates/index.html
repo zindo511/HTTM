@@ -24,46 +24,94 @@
         <section class="stream-panel">
             <div class="stream-wrapper">
                 <img id="videoStream" src="/video_feed" alt="Live Camera Feed">
-                <canvas id="roiCanvas"></canvas>
                 <div id="liveAlertBanner" class="live-alert-banner" style="display: none;"></div>
             </div>
-            
-            <div class="stream-controls" style="flex-wrap: wrap; gap: 8px;">
-                <div style="display: flex; gap: 8px; align-items: center;">
-                    <select id="zoneTypeSelect" class="btn" style="background: #334155; color: #fff; cursor: pointer;" onchange="redrawCanvas()">
-                        <option value="LOITERING_ZONE">⏳ Vùng giám sát Lảng vảng</option>
-                    </select>
-                    <button id="btnDrawROI" class="btn btn-primary" onclick="toggleDrawROI()">🖌️ Vẽ vùng ROI mới</button>
-                    <button class="btn btn-success" onclick="saveROI()">💾 Lưu vùng</button>
-                    <button class="btn btn-danger" onclick="clearROI()">🗑️ Xóa sạch vùng</button>
+
+            <div class="toolbar-bar">
+                {% if demo_clips %}
+                <div class="demo-controls" role="group" aria-label="Video mẫu">
+                    <span class="toolbar-label">Mẫu nhanh:</span>
+                    {% for label, source in demo_clips %}
+                    <button type="button" class="btn btn-sm demo-source" data-source="{{ source }}"
+                        aria-pressed="{{ 'true' if source == current_source else 'false' }}"
+                        onclick="onSelectVideoSource(this.dataset.source)">{{ label }}</button>
+                    {% endfor %}
+                    <button type="button" class="btn btn-sm demo-source" data-source="http://192.168.33.196:4747/video"
+                        aria-pressed="{{ 'true' if 'http://192.168.33.196:4747/video' == current_source else 'false' }}"
+                        onclick="onSelectVideoSource(this.dataset.source)">📱 DroidCam</button>
                 </div>
-                
-                <div style="display: flex; gap: 8px; align-items: center; margin-left: auto;">
-                    <label style="font-size: 0.85rem; color: #38bdf8; font-weight: 600;">Nguồn Video:</label>
-                    <select id="videoSelect" class="btn" style="background: #334155; color: #fff; cursor: pointer;" onchange="onSelectVideoSource(this.value)">
-                        <option value="data/test_videos/people_walking.mp4">📹 1. Lảng vảng / Đi lại (people_walking.mp4)</option>
-                        <option value="data/test_videos/fall_sample.mp4">🚨 2. Té ngã thực tế (fall_sample.mp4)</option>
-                        <option value="data/test_videos/walking_corridor.mp4">🚶 3. Hành lang đi lại (walking_corridor.mp4)</option>
-                        <option value="data/test_videos/fight1.mp4">🥊 4. Ẩu đả / Vật lộn (fight1.mp4)</option>
-                        <option value="0">📷 4. Webcam máy tính trực tiếp</option>
+                {% endif %}
+
+                <div class="stream-controls">
+                    <label for="videoSelect" class="toolbar-label" style="color: #38bdf8;">Nguồn:</label>
+                    <select id="videoSelect" class="btn btn-sm select-control" onchange="onSelectVideoSource(this.value)">
+                        {% for label, source in demo_clips %}
+                        <option value="{{ source }}">{{ label }}</option>
+                        {% endfor %}
+                        <option value="data/test_videos/walking_corridor.mp4">Hành lang đi lại</option>
+                        <option value="http://192.168.33.196:4747/video">📱 DroidCam (192.168.33.196)</option>
+                        <option value="0">Webcam máy tính</option>
                     </select>
-                    <label class="btn btn-primary" style="margin: 0; cursor: pointer;">
-                        📤 Tải video lên
+                    <button class="btn btn-sm btn-secondary" type="button" onclick="onSelectVideoSource(document.getElementById('videoSelect').value)" title="Phát lại từ đầu">↻ Phát lại</button>
+                    <label class="btn btn-sm btn-primary" style="margin: 0; cursor: pointer;">
+                        📤 Tải video
                         <input type="file" id="videoUploadInput" accept="video/mp4,video/avi" style="display: none;" onchange="uploadCustomVideo(this)">
                     </label>
                 </div>
             </div>
+
+            <details class="phone-camera">
+                <summary>📱 Kết nối Camera điện thoại (DroidCam / IP Webcam)</summary>
+                <form id="phoneCameraForm">
+                    <div class="phone-camera-input">
+                        <input id="phoneCameraUrl" type="text" required
+                            value="http://192.168.33.196:4747/video"
+                            placeholder="http://192.168.33.196:4747/video (hoặc nhập IP:4747)"
+                            autocomplete="off" spellcheck="false" aria-label="Địa chỉ luồng video" aria-describedby="phoneCameraHint">
+                        <button class="btn btn-sm btn-primary" type="submit">Kết nối</button>
+                    </div>
+                    <div class="phone-camera-meta">
+                        <span id="phoneCameraHint">Mở app DroidCam / IP Webcam trên điện thoại cùng mạng Wi-Fi. Hệ thống tự thêm <code>/video</code> nếu bạn chỉ nhập IP:Port.</span>
+                        <span id="phoneCameraStatus" role="status"></span>
+                    </div>
+                </form>
+            </details>
         </section>
 
         <!-- [B] KHU VỰC CỘT SỰ KIỆN THỜI GIAN THỰC (30% WIDTH) -->
         <aside class="alert-panel">
             <div class="panel-header">
-                <span>🔔 CẢNH BÁO TỨC THỜI (WEBSOCKET)</span>
-                <span style="font-size: 0.8rem; background: #334155; padding: 2px 8px; border-radius: 4px;" id="alertCount">0</span>
+                <div class="panel-header-title">
+                    <span>🔔 CẢNH BÁO TỨC THỜI</span>
+                    <span class="alert-count-badge" id="alertCount">0</span>
+                </div>
+                <button type="button" class="btn-clear-alerts" id="clearAlertsBtn" onclick="clearAlerts()" title="Xoá danh sách cảnh báo đang hiển thị">
+                    🗑️ Xoá tất cả
+                </button>
+            </div>
+
+            <!-- Thanh lọc theo hành vi -->
+            <div class="alert-filter-bar" id="alertFilterBar" role="tablist" aria-label="Lọc cảnh báo theo hành vi">
+                <button type="button" class="filter-chip active" data-filter="ALL" onclick="setAlertFilter('ALL')">
+                    Tất cả
+                </button>
+                <button type="button" class="filter-chip filter-RUNNING" data-filter="RUNNING" onclick="setAlertFilter('RUNNING')">
+                    🏃 Chạy <span class="chip-count" id="chipCountRUNNING">0</span>
+                </button>
+                <button type="button" class="filter-chip filter-FALLING" data-filter="FALLING" onclick="setAlertFilter('FALLING')">
+                    🚨 Té ngã <span class="chip-count" id="chipCountFALLING">0</span>
+                </button>
+                <button type="button" class="filter-chip filter-FIGHTING" data-filter="FIGHTING" onclick="setAlertFilter('FIGHTING')">
+                    🥊 Ẩu đả <span class="chip-count" id="chipCountFIGHTING">0</span>
+                </button>
             </div>
             
             <div class="alert-feed" id="alertFeed">
                 <!-- Các thẻ sự kiện cảnh báo sẽ được WebSocket đẩy tự động vào đây -->
+            </div>
+            <div class="alert-empty" id="alertEmptyState">
+                <div class="alert-empty-icon">🛡️</div>
+                <div id="alertEmptyText">Chưa có cảnh báo nào được ghi nhận</div>
             </div>
         </aside>
 
@@ -71,17 +119,30 @@
 
     <!-- [C] THANH THỐNG KÊ NHANH Ở ĐÁY MÀN HÌNH -->
     <footer>
-        <div>
-            <span>Hành vi giám sát: </span>
-            <strong style="color: #eab308;">Lảng vảng: <span id="countLOITERING">0</span></strong> &nbsp;|&nbsp; 
-            <strong style="color: #f97316;">Chạy: <span id="countRUNNING">0</span></strong> &nbsp;|&nbsp; 
-            <strong style="color: #ec4899;">Té ngã: <span id="countFALLING">0</span></strong> &nbsp;|&nbsp; <strong style="color: #a855f7;">Ẩu đả: <span id="countFIGHTING">0</span></strong>
+        <div class="footer-stats">
+            <span>Thống kê hành vi:</span>
+            <button type="button" class="footer-stat-pill" onclick="setAlertFilter('RUNNING')" title="Lọc cảnh báo Chạy nhanh">
+                <strong style="color: #f97316;">🏃 Chạy: <span id="countRUNNING">0</span></strong>
+            </button>
+            <button type="button" class="footer-stat-pill" onclick="setAlertFilter('FALLING')" title="Lọc cảnh báo Té ngã">
+                <strong style="color: #ec4899;">🚨 Té ngã: <span id="countFALLING">0</span></strong>
+            </button>
+            <button type="button" class="footer-stat-pill" onclick="setAlertFilter('FIGHTING')" title="Lọc cảnh báo Ẩu đả">
+                <strong style="color: #a855f7;">🥊 Ẩu đả: <span id="countFIGHTING">0</span></strong>
+            </button>
         </div>
         <div>
-            <span>Engine: <strong>YOLOv8-Pose + ByteTrack</strong> | Pipeline: <strong>Drop-Oldest Queue (Zero Lag)</strong></span>
+            <span>Engine: <strong>YOLOv8-Pose + ByteTrack</strong></span>
         </div>
     </footer>
 
+    <script>
+        const currentSource = {{ current_source | tojson }};
+        const sourceSelect = document.getElementById("videoSelect");
+        if (Array.from(sourceSelect.options).some(option => option.value === currentSource)) {
+            sourceSelect.value = currentSource;
+        }
+    </script>
     <script src="/static/js/dashboard.js"></script>
     <script>
         // Cập nhật đồng hồ thời gian thực

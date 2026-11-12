@@ -1,128 +1,137 @@
-# BẢNG KIỂM TOÁN KỸ THUẬT, PHÂN CÔNG NHIỆM VỤ & THỎA THUẬN LÀM VIỆC NHÓM
+# HIỆN TRẠNG, KẾ HOẠCH CÔNG VIỆC VÀ QUY TẮC LÀM VIỆC NHÓM
 
-> [!IMPORTANT]
-> Tài liệu này quy định rõ các hạng mục kỹ thuật cần hoàn thiện của dự án **Hệ thống Trinh sát Phát hiện Hành vi Bất thường (AI Surveillance)**, phân định ranh giới mã nguồn (File Ownership) và quy tắc phối hợp Git để các thành viên triển khai độc lập, hiệu quả, **tuyệt đối không xảy ra xung đột mã nguồn (Git Merge Conflict)**.
-
----
-
-## 1. HIỆN TRẠNG DỰ ÁN (PHẦN NỀN TẢNG ĐÃ HOÀN THÀNH)
-
-**Nhóm trưởng (Kiến trúc sư hệ thống)** đã thiết lập và hoàn thiện phần khung lõi (Core Foundation) của toàn dự án:
-
-- Hoàn thành bộ tài liệu thiết kế học thuật từ Chương 1 đến Chương 4 trong thư mục `docs/`.
-- Xây dựng kiến trúc đa luồng Tầng 1 (`src/core/capture.py` với `DropOldestQueue`) chống trễ luồng RTSP/Video.
-- Tích hợp mô hình `YOLOv8n-Pose` và thuật toán bám vết `ByteTrack` trong `src/core/pipeline.py`.
-- Xây dựng bộ điều phối cảnh báo bất đồng bộ `src/core/alert_manager.py`, khung cơ sở dữ liệu `src/database/db_service.py` và khung giao diện Web FastAPI + WebSocket (`web/`).
-
-Để hệ thống đạt độ hoàn thiện **100% phục vụ báo cáo và chấm điểm thực nghiệm**, phần công việc hoàn thiện **9 điểm kỹ thuật còn lại** được chia đều cho **2 thành viên** theo 2 mảng độc lập dưới đây.
+Cập nhật lần cuối: 11/11/2026. Phạm vi dự án: phát hiện ba hành vi **Chạy nhanh**, **Té ngã**, **Đánh nhau**.
 
 ---
 
-## 2. DANH SÁCH 9 VẤN ĐỀ KỸ THUẬT CẦN HOÀN THIỆN
+## 1. Hiện trạng
 
-### Nhóm vấn đề 1: Thuật toán Hành vi, Tracking & Huấn luyện Mô hình AI (`src/behaviors/`, `src/models/`, `scripts/`)
+### 1.1. Đã hoàn thành
 
-1. **Lỗi "Kẹt trạng thái" (Stuck State Bug) sau khi hết vi phạm:**
-   - _Hiện trạng:_ Trong [`src/behaviors/intrusion.py`](file:///e:/btl-httm/src/behaviors/intrusion.py#L55-L56) và [`src/behaviors/fall_run.py`](file:///e:/btl-httm/src/behaviors/fall_run.py#L64-L75), khi đối tượng đã bước ra ngoài vùng cấm hoặc ngừng chạy/đứng dậy sau khi ngã, biến `track.current_state` vẫn bị giữ nguyên ở `"INTRUSION_ALERT"`, `"RUNNING_ALERT"` hoặc `"FALLING_ALERT"` mà không trả về `"NORMAL"`.
-   - _Yêu cầu:_ Cập nhật logic reset `track.current_state = "NORMAL"` ngay khi điều kiện vi phạm không còn thỏa mãn.
-2. **Giả định cứng bước thời gian `dt = 5.0 / 30.0` khi tính vận tốc chạy:**
-   - _Hiện trạng:_ Tại dòng 60 file [`src/behaviors/fall_run.py`](file:///e:/btl-httm/src/behaviors/fall_run.py#L60), `dt` đang gán cố định cho video 30 FPS. Khi chạy video có FPS khác (ví dụ 12 FPS hoặc 20 FPS), vận tốc chuẩn hóa `v_norm` bị tính sai lệch.
-   - _Yêu cầu:_ Lưu thêm hàng đợi `timestamps: deque(maxlen=30)` trong `TrackHistory` ([`src/tracking/track_manager.py`](file:///e:/btl-httm/src/tracking/track_manager.py)) và tính `dt = track.timestamps[-1] - track.timestamps[-5]` theo thời gian thực.
-3. **Thiếu công thức kiểm tra độ nghiêng thân người (`body_lean_min`) và vận tốc rơi thẳng đứng (`vy_drop_min`):**
-   - _Hiện trạng:_ Trong [`src/behaviors/fall_run.py`](file:///e:/btl-httm/src/behaviors/fall_run.py#L25-L31), hai tham số `self.body_lean_min` (góc đổ người khi chạy) và `self.vy_drop_min` (vận tốc rơi của khớp hông theo trục $Oy$ khi ngã) đã được khai báo ở `__init__` nhưng chưa được đưa vào biểu thức điều kiện trong hàm `process()`.
-   - _Yêu cầu:_ Bổ sung phép tính độ nghiêng trục lưng khi chạy và vận tốc rơi thẳng đứng $V_y = \frac{y_{hip}^{(t)} - y_{hip}^{(t-5)}}{\Delta t \cdot H}$ khi phát hiện té ngã ở Tier 1.
-4. **Lỗi "Double Softmax" làm giảm khả năng hội tụ khi train mạng Bi-LSTM:**
-   - _Hiện trạng:_ Trong [`src/models/bilstm_verifier.py`](file:///e:/btl-httm/src/models/bilstm_verifier.py#L37), hàm `forward()` trả về `self.softmax(logits)`. Tuy nhiên trong [`scripts/train_bilstm.py`](file:///e:/btl-httm/scripts/train_bilstm.py#L79) lại dùng `nn.CrossEntropyLoss()` (hàm này trong PyTorch đã tự động áp dụng `LogSoftmax` bên trong).
-   - _Yêu cầu:_ Sửa `BiLSTMActionClassifier.forward()` chỉ trả về `logits` thô để phục vụ `CrossEntropyLoss` khi train, và chỉ gọi `torch.softmax(logits, dim=1)` bên trong hàm `BiLSTMInferenceWrapper.predict()` khi suy luận.
-5. **Thiếu biểu đồ đường cong huấn luyện Loss/Accuracy (`docs/training_curve.png`) và file trọng số thật `weights/fall_bilstm.pt`:**
-   - _Hiện trạng:_ File [`scripts/train_bilstm.py`](file:///e:/btl-httm/scripts/train_bilstm.py#L160-L169) mới chỉ xuất ra `docs/confusion_matrix.png`, chưa vẽ biểu đồ đường cong `train_loss`, `val_loss`, `train_acc`, `val_acc` qua 50 Epochs; đồng thời chưa có file trọng số `weights/fall_bilstm.pt` được train từ dữ liệu thật nên `enable_bilstm_tier2` trong `config.yaml` đang phải đặt là `false`.
-   - _Yêu cầu:_ Bổ sung đoạn code `matplotlib` vẽ đồ thị Loss/Accuracy lưu ra `docs/training_curve.png`, chạy trích xuất dữ liệu khớp xương và train trên Google Colab để lấy file `weights/fall_bilstm.pt`, sau đó bật `enable_bilstm_tier2: true`.
+- Khung hệ thống: thu hình đa luồng, YOLOv8n-Pose + ByteTrack, quản lý lịch sử từng người, cảnh báo bất đồng bộ, SQLite, dashboard web (video trực tiếp, cột cảnh báo, đổi nguồn, tải video lên).
+- Té ngã: máy trạng thái theo thời gian (`src/behaviors/fall_fsm.py`), có kiểm thử tự động.
+- Chạy nhanh: vận tốc chuẩn hoá theo chiều cao cơ thể, tính theo thời gian thực (`src/behaviors/fall_run.py`).
+- Đánh nhau: luật theo cặp người (`src/behaviors/fighting.py`), có kiểm thử tự động.
+- 9 vấn đề kỹ thuật của đợt phân công trước (kẹt trạng thái, `dt` gán cứng, thiếu điều kiện đổ người và vận tốc rơi, double softmax, biểu đồ huấn luyện, lệch toạ độ, lịch sử cảnh báo khi tải lại trang, bộ đếm cảnh báo) đã được xử lý.
+- Đợt dọn dẹp 11/2026: bỏ hành vi xâm nhập và lảng vảng cùng công cụ vẽ vùng; sửa nạp trọng số Bi-LSTM, chọn thiết bị, tải video lên, lưu mô tả cảnh báo; gỡ dữ liệu sinh ra khi chạy khỏi git.
 
----
+### 1.2. Chưa hoàn thành
 
-### Nhóm vấn đề 2: Giao diện Web Dashboard, Backend API, SQLite & Kiểm thử (`web/`, `src/database/`)
+| Hạng mục | Tình trạng |
+| :--- | :--- |
+| Bộ video có nhãn | Chưa có. Mỗi hành vi ngã/đánh nhau có 1 clip, chạy nhanh chưa có clip nào |
+| Công cụ đánh giá theo sự kiện | Chưa có. Script hiện tại chỉ kiểm tra "có cảnh báo đúng loại" và tắt hành vi chạy |
+| Bi-LSTM xác minh té ngã | Chưa huấn luyện bằng dữ liệu thật, đang tắt |
+| Đánh nhau | Yếu khi hai người bị gộp thành một khung; chưa có tập âm tính |
+| Chạy nhanh | Chưa kiểm chứng trên video chạy thật; chưa có kiểm thử tự động |
+| Số liệu báo cáo | Chương 4 mới có kết quả sơ bộ, chưa có Precision/Recall |
 
-6. **Lỗi lệch tọa độ vùng cấm ROI khi vẽ bằng chuột trên trình duyệt:**
-   - _Hiện trạng:_ Tại dòng 105–106 và 116–117 của [`web/static/js/dashboard.js`](file:///e:/btl-httm/web/static/js/dashboard.js#L105-L117), tỷ lệ quy đổi tọa độ đang gán cứng là `1280` và `720`. Khi phát video có độ phân giải khác (như `people_walking.mp4` kích thước `768x432`), đa giác vẽ trên trình duyệt bị lệch hoàn toàn so với đa giác OpenCV vẽ dưới backend.
-   - _Yêu cầu:_ Thay hằng số `1280` và `720` bằng kích thước khung hình thực tế của thẻ ảnh stream: `videoStream.naturalWidth || 1280` và `videoStream.naturalHeight || 720`.
-7. **Chưa cho phép chọn loại vùng "Giám sát Lảng vảng (`LOITERING_ZONE`)" trên giao diện Web:**
-   - _Hiện trạng:_ Trong hàm `saveROI()` của [`web/static/js/dashboard.js`](file:///e:/btl-httm/web/static/js/dashboard.js#L156-L161), thuộc tính `type` đang bị gán cứng là `"RESTRICTED_INTRUSION"`, khiến người dùng không thể vẽ vùng phát hiện Lảng vảng từ giao diện.
-   - _Yêu cầu:_ Thêm một thẻ `<select id="zoneTypeSelect">` trên thanh công cụ ở [`web/templates/index.html`](file:///e:/btl-httm/web/templates/index.html) cho phép chọn giữa 2 chế độ: `Vùng cấm Xâm nhập (RESTRICTED_INTRUSION)` và `Vùng giám sát Lảng vảng (LOITERING_ZONE)` trước khi bấm Lưu vùng.
-8. **Mất lịch sử cảnh báo và không đồng bộ vùng ROI với SQLite khi tải lại trang (F5):**
-   - _Hiện trạng:_
-     - Khi nhấn F5 trình duyệt, cột cảnh báo bên phải bị trống trơn vì `dashboard.js` chưa gọi API `GET /api/events` để nạp lại lịch sử cảnh báo đã lưu trong SQLite.
-     - Khi khởi động server hoặc bấm "Xóa sạch vùng" (`POST /api/zones/clear` trong [`web/app.py`](file:///e:/btl-httm/web/app.py#L121-L126)), hệ thống mới chỉ xóa mảng `zones` trên RAM chứ chưa xóa trong bảng `zones` của SQLite (`src/database/db_service.py`).
-   - _Yêu cầu:_ Bổ sung hàm `clear_all_zones()` trong `DatabaseService`, tự động nạp danh sách vùng từ SQLite khi khởi tạo, và gọi `fetch("/api/events")` khi trang web vừa tải xong (`window.onload`).
-9. **Hiển thị sai tổng số cảnh báo trên HUD video và thiếu bộ đếm phân loại dưới Footer:**
-   - _Hiện trạng:_ Tại dòng 154 của [`src/core/pipeline.py`](file:///e:/btl-httm/src/core/pipeline.py#L154), hàm đang gọi `self.db_service.get_recent_events(limit=1)` rồi lấy `len(events)` nên góc màn hình HUD luôn chỉ hiển thị tối đa `01` cảnh báo. Ngoài ra, thanh `<footer>` trên web mới chỉ hiện chữ tĩnh chứ chưa đếm số lượng từng loại cảnh báo (`Xâm nhập: 0 | Lảng vảng: 0 | Chạy: 0 | Té ngã: 0`).
-   - _Yêu cầu:_ Thêm hàm `count_total_events()` trong `db_service.py` (hoặc dùng biến đếm trong `AlertManager`) để hiển thị đúng tổng số cảnh báo trên HUD, đồng thời cập nhật số đếm từng loại hành vi dưới thanh `<footer>` mỗi khi có cảnh báo mới.
+Chi tiết: `docs/04_thuc_nghiem_va_danh_gia.md`.
 
 ---
 
-## 3. BẢNG PHÂN CÔNG NHIỆM VỤ CHI TIẾT CHO 2 THÀNH VIÊN
+## 2. Kế hoạch công việc
 
-| Thành viên    | Vai trò chuyên môn                                                             | Thư mục / File độc quyền chỉnh sửa                                                                          | Danh sách đầu việc cụ thể                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Sản phẩm bàn giao (Deliverables)                                                                                                                                                                                                                         |
-| :------------ | :----------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Quang Anh** | **Kỹ sư AI & Thuật toán Hành vi**<br>_(Behavior Algorithms & Deep Learning)_   | 📁 `src/behaviors/`<br>📁 `src/tracking/`<br>📁 `src/models/`<br>📁 `scripts/`<br>📁 `weights/`             | 1. Giải quyết **Vấn đề #1**: Tự động reset `track.current_state = "NORMAL"` trong `intrusion.py` và `fall_run.py` khi đối tượng hết vi phạm.<br>2. Giải quyết **Vấn đề #2**: Thêm `timestamps` vào `TrackHistory` (`track_manager.py`) để tính đúng `dt` thực tế.<br>3. Giải quyết **Vấn đề #3**: Đưa công thức góc nghiêng lưng `body_lean_min` và vận tốc rơi thẳng đứng `vy_drop_min` vào hàm `process()` của `fall_run.py`.<br>4. Giải quyết **Vấn đề #4 & #5**: Sửa lỗi Double Softmax trong `bilstm_verifier.py`, thêm code vẽ `docs/training_curve.png` vào `train_bilstm.py`, chạy train trên Colab để xuất ra `weights/fall_bilstm.pt`.                                                                                            | • Nhánh Git: `feat/ai-and-behaviors`<br>• Các thuật toán Xâm nhập, Lảng vảng, Chạy, Ngã hoạt động chuẩn xác, tự trả về khung xanh khi hết vi phạm.<br>• File trọng số `weights/fall_bilstm.pt` + 2 biểu đồ `confusion_matrix.png`, `training_curve.png`. |
-| **Hồng Phúc** | **Kỹ sư Fullstack Web, Database & Kiểm thử**<br>_(Web Dashboard, SQLite & QA)_ | 📁 `web/`<br>📁 `src/database/`<br>📄 `src/core/pipeline.py` _(chỉ sửa dòng 154)_<br>📁 `data/test_videos/` | 1. Giải quyết **Vấn đề #6**: Sửa công thức tính `scaleX`, `scaleY` theo `videoStream.naturalWidth / naturalHeight` trong `web/static/js/dashboard.js`.<br>2. Giải quyết **Vấn đề #7**: Thêm dropdown chọn loại vùng (`RESTRICTED_INTRUSION` / `LOITERING_ZONE`) trên giao diện `index.html` và gửi đúng `type` khi lưu vùng.<br>3. Giải quyết **Vấn đề #8**: Thêm hàm xóa/đồng bộ bảng `zones` trong `db_service.py` và viết hàm JS tự tải lại lịch sử cảnh báo từ `/api/events` khi F5 trang web.<br>4. Giải quyết **Vấn đề #9**: Sửa số đếm tổng cảnh báo trên HUD và thêm bộ đếm theo từng loại hành vi dưới thanh `<footer>` của trang web.<br>5. Quay/sưu tầm đủ bộ video kiểm thử thực tế cho 4 kịch bản đưa vào `data/test_videos/`. | • Nhánh Git: `feat/web-and-database`<br>• Giao diện Dashboard vẽ chuẩn tọa độ trên mọi độ phân giải video, chọn được cả vùng Xâm nhập & Lảng vảng, F5 vẫn giữ nguyên lịch sử cảnh báo.<br>• Bộ video kiểm thử thực tế chạy mượt trên hệ thống.           |
-| **Quang Huy** | **Kiến trúc sư Hệ thống & Quản lý Dự án**<br>_(System Architect & Lead)_       | 📄 `configs/config.yaml`<br>📄 `main.py`<br>📁 `docs/`                                                      | 1. Đã xây dựng toàn bộ kiến trúc nền tảng 4 tầng, đa luồng Capture/Pipeline và tài liệu 4 chương.<br>2. Hỗ trợ kỹ thuật, giải đáp thắc mắc cho 2 thành viên.<br>3. Kiểm duyệt mã nguồn (Review Pull Request), tích hợp 2 nhánh của Thành viên A & B vào nhánh `main` và kiểm thử tổng thể lần cuối.                                                                                                                                                                                                                                                                                                                                                                                                                                         | • Nhánh chính: `main`<br>• Hệ thống hợp nhất hoàn chỉnh và bộ báo cáo/slide bảo vệ cuối kỳ.                                                                                                                                                              |
+Các giai đoạn theo thứ tự ưu tiên. Giai đoạn 2 là điều kiện cho các giai đoạn sau: không có dữ liệu có nhãn thì không đo được cải tiến nào.
+
+### Giai đoạn 2 — Dữ liệu và công cụ đánh giá
+
+| # | Việc | Sản phẩm | Hoàn thành khi |
+| :---: | :--- | :--- | :--- |
+| 2.1 | Thu thập video: mỗi hành vi 15–20 clip dương tính + tập âm tính khó (bảng ở mục 4.4.2 Chương 4) | Video trong `data/test_videos/`, kèm ghi chú nguồn gốc | Đủ số lượng cho cả 3 hành vi |
+| 2.2 | Gán nhãn thời điểm bắt đầu/kết thúc từng sự kiện | `data/labels.csv` | Mọi clip dương tính đều có nhãn |
+| 2.3 | Viết script đánh giá theo sự kiện, bật cả 3 hành vi | `scripts/evaluate_events.py`, xuất bảng TP/FP/FN, Precision/Recall/F1, độ trễ | Chạy một lệnh ra bảng kết quả cho toàn bộ tập |
+| 2.4 | Đo kết quả gốc của hệ thống hiện tại | Bảng số liệu trong Chương 4 | Có số liệu cho cả 3 hành vi |
+
+### Giai đoạn 3 — Cải thiện phát hiện
+
+| # | Việc | Ghi chú |
+| :---: | :--- | :--- |
+| 3.1 | Chỉnh ngưỡng chạy nhanh theo số liệu; thêm kiểm thử tự động cho chạy | Cân nhắc thêm tín hiệu tần suất bước chân |
+| 3.2 | Huấn luyện Bi-LSTM xác minh té ngã bằng dữ liệu thật | Lấy mẫu theo thời gian thay vì theo khung hình; chia tập theo video; xử lý trường hợp thiếu 30 bộ khớp (mục 3.3.3 Chương 3) |
+| 3.3 | Nâng cấp đánh nhau | Giữ luật hiện tại để khoanh vùng nghi vấn; thêm mô hình phân loại clip ngắn trên vùng ảnh gộp, huấn luyện trên RWF-2000 / Hockey Fight |
+| 3.4 | Đo lại sau mỗi thay đổi bằng script của Giai đoạn 2 | So với kết quả gốc ở 2.4 |
+
+### Giai đoạn 4 — Hoàn thiện báo cáo
+
+- Điền số liệu thật vào Chương 4: bảng theo sự kiện, so sánh có/không Tier 2, so sánh phương pháp đánh nhau, tốc độ xử lý.
+- Thay `docs/training_curves.png` và `docs/confusion_matrix.png` bằng kết quả huấn luyện thật.
+- Rà soát Chương 1–3 cho khớp với mã nguồn cuối cùng.
+
+### Giai đoạn 5 — Hoàn thiện demo
+
+- Nút "Đã xử lý" cho từng cảnh báo (cột `resolution_status` đã có sẵn trong CSDL).
+- Xoá trạng thái bám vết khi file video phát lại từ đầu.
+- Kịch bản demo cho từng hành vi và video dự phòng.
+
+Phân công từng việc cho thành viên: nhóm tự thống nhất và ghi vào cột dưới đây.
+
+| Việc | Phụ trách | Hạn |
+| :--- | :--- | :--- |
+| 2.1 – 2.2 Thu thập và gán nhãn video | | |
+| 2.3 – 2.4 Script đánh giá và đo kết quả gốc | | |
+| 3.1 Chạy nhanh | | |
+| 3.2 Bi-LSTM té ngã | | |
+| 3.3 Đánh nhau | | |
+| 4 Báo cáo | | |
+| 5 Demo | | |
 
 ---
 
-## 4. BIÊN BẢN THỎA THUẬN & QUY TẮC PHỐI HỢP (TEAM AGREEMENT)
+## 3. Quy tắc làm việc nhóm
 
-Để quá trình ghép code diễn ra trơn tru 100%, tất cả thành viên thống nhất tuân thủ nghiêm ngặt **4 quy tắc** sau:
+### 3.1. Phân vùng mã nguồn
 
-### 4.1. Quy tắc Phân vùng File (Strict File Ownership)
+Để hạn chế xung đột khi ghép mã, mỗi việc nên chỉ chạm vào một nhóm file:
 
-- **Thành viên A** tuyệt đối không sửa các file trong `web/` và `src/database/`.
-- **Thành viên B** tuyệt đối không sửa các file trong `src/behaviors/`, `src/tracking/`, `src/models/` và `scripts/`.
-- Nếu cần thay đổi thông số trong `configs/config.yaml`, thành viên đề xuất vào nhóm chat để Nhóm trưởng cập nhật.
+| Mảng | Thư mục / file |
+| :--- | :--- |
+| Thuật toán hành vi, bám vết, mô hình | `src/behaviors/`, `src/tracking/`, `src/models/`, `scripts/`, `tests/` |
+| Web, cơ sở dữ liệu | `web/`, `src/database/` |
+| Điều phối, cấu hình, tài liệu | `src/core/`, `configs/config.yaml`, `main.py`, `docs/` |
 
-### 4.2. Giao ước Chuẩn Dữ liệu (Data Contracts - Không tự ý đổi tên khóa/hàm)
+Thay đổi ngưỡng trong `configs/config.yaml` cần báo cho cả nhóm, vì nó ảnh hưởng tới kết quả đánh giá của mọi người.
 
-1. **Chuẩn giao tiếp Mô hình Bi-LSTM (Thành viên A đảm bảo):**
-   - Hàm `bilstm_model.predict(sequence_30x34)` nhận đầu vào là mảng NumPy kích thước `(1, 30, 34)` và bắt buộc trả về bộ 3 số thực `(prob_normal, prob_running, prob_fall)` có tổng bằng `1.0`.
-2. **Chuẩn mã định danh Sự kiện & Vùng giám sát (Dùng chung giữa Backend và Frontend):**
-   - Mã 4 loại hành vi (`event_type`): `"INTRUSION"`, `"LOITERING"`, `"RUNNING"`, `"FALLING"`.
-   - Mã 2 loại vùng (`zone.type`): `"RESTRICTED_INTRUSION"` (vùng cấm xâm nhập) và `"LOITERING_ZONE"` (vùng giám sát lảng vảng).
-3. **Chuẩn gói tin JSON đẩy qua WebSocket `/ws/alerts`:**
+### 3.2. Giao ước dữ liệu dùng chung
+
+1. **Mã loại sự kiện (`event_type`):** `"RUNNING"`, `"FALLING"`, `"FIGHTING"`.
+2. **Gói tin WebSocket `/ws/alerts`** và phần tử của `/api/events`:
    ```json
    {
-     "event_type": "INTRUSION | LOITERING | RUNNING | FALLING",
+     "event_type": "RUNNING | FALLING | FIGHTING",
      "track_id": 3,
-     "zone_id": "ZONE_01",
-     "confidence": 94.5,
-     "timestamp": "2026-10-25 17:30:00",
-     "snapshot_url": "/snapshots/INTRUSION_3_1761388200.jpg",
-     "extra_info": "Mô tả chi tiết sự kiện"
+     "zone_id": "N/A",
+     "confidence": 90.0,
+     "timestamp": "2026-11-11 10:30:00",
+     "snapshot_url": "/snapshots/FALLING_3_1793400000.jpg",
+     "extra_info": "Mô tả sự kiện"
    }
    ```
+3. **Mô hình Bi-LSTM:** `predict(sequence)` nhận mảng NumPy `(1, 30, 34)` hoặc `(30, 34)`, trả về bộ ba xác suất `(bình thường, chạy, ngã)` có tổng bằng 1.
+4. **Bộ phát hiện hành vi:** phát cảnh báo qua `alert_manager.trigger_alert(event_type, track_id, frame, confidence, extra_info)`, và tự kiểm tra cooldown bằng `track.can_trigger_alert(...)`.
 
-### 4.3. Quy trình Làm việc với Git (Git Workflow)
+### 3.3. Quy trình Git
 
-1. **Lấy code mới nhất về máy và kích hoạt môi trường Python 3.12:**
+1. Lấy mã mới nhất và tạo nhánh riêng cho từng việc:
    ```powershell
    git checkout main
    git pull origin main
-   .\.venv\Scripts\Activate.ps1
+   git checkout -b feat/ten-viec
    ```
-2. **Tạo nhánh làm việc riêng (Mỗi thành viên 1 nhánh):**
-   - Thành viên A: `git checkout -b feat/ai-and-behaviors`
-   - Thành viên B: `git checkout -b feat/web-and-database`
-3. **Quy tắc đặt tên Commit (Conventional Commits):**
-   - Thêm tính năng: `git commit -m "feat: them tuy chon ve vung lang vang tren web"`
-   - Sửa lỗi: `git commit -m "fix: sua loi ket trang thai trong intrusion va fall_run"`
-4. **Đẩy nhánh lên GitHub và tạo Pull Request:**
+2. Đặt tên commit theo dạng `feat: ...`, `fix: ...`, `docs: ...`, `refactor: ...`.
+3. Đẩy nhánh lên và tạo Pull Request; không đẩy trực tiếp vào `main`.
+4. Không đưa lên git: trọng số mô hình, video, ảnh bằng chứng, file CSDL (đã khai báo trong `.gitignore`).
+
+### 3.4. Tiêu chí hoàn thành một việc
+
+1. Kiểm thử tự động đạt:
    ```powershell
-   git push -u origin <ten-nhanh-cua-ban>
+   python -m unittest discover -s tests -v
    ```
-   _(Tuyệt đối không push trực tiếp vào nhánh `main`. Nhóm trưởng sẽ kiểm tra và Merge)._
-
-### 4.4. Tiêu chí Nghiệm thu Công việc (Definition of Done - DoD)
-
-Một đầu việc chỉ được tính là **Hoàn thành** khi thỏa mãn đủ 3 điều kiện:
-
-1. Chạy lệnh `.\.venv\Scripts\python.exe main.py` mượt mà, không phát sinh bất kỳ lỗi Exception nào trên Terminal hay Console trình duyệt.
-2. Không làm giảm tốc độ xử lý FPS của luồng video.
-3. Có ảnh chụp màn hình hoặc video ngắn (10–15 giây) gửi vào nhóm chứng minh tính năng/lỗi đó đã được xử lý triệt để.
+2. Các video mẫu vẫn cho kết quả mong đợi:
+   ```powershell
+   python -m scripts.evaluate_behaviors_local --check
+   ```
+3. `python main.py` chạy không lỗi trên terminal và trên console của trình duyệt.
+4. Với thay đổi thuật toán: có số liệu trước/sau trên tập có nhãn (khi Giai đoạn 2 đã xong).
+5. Tài liệu trong `docs/` được cập nhật nếu hành vi của hệ thống thay đổi.

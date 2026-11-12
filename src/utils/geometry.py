@@ -1,6 +1,5 @@
 import math
 import numpy as np
-import cv2
 from typing import Tuple, List, Optional
 
 
@@ -11,19 +10,6 @@ def get_foot_point(bbox: Tuple[float, float, float, float]) -> Tuple[float, floa
     """
     x1, y1, x2, y2 = bbox
     return ((x1 + x2) / 2.0, float(y2))
-
-
-def is_point_in_polygon(point: Tuple[float, float], polygon: np.ndarray) -> bool:
-    """
-    Kiểm tra điểm tiếp đất có nằm trong đa giác vùng cấm ROI hay không (Point-in-Polygon).
-    Sử dụng cv2.pointPolygonTest: >= 0 là nằm trong hoặc trên biên đa giác.
-    """
-    if polygon is None or len(polygon) < 3:
-        return False
-    # Đảm bảo định dạng int32 cho cv2.pointPolygonTest
-    pts = np.array(polygon, dtype=np.int32)
-    dist = cv2.pointPolygonTest(pts, (float(point[0]), float(point[1])), False)
-    return dist >= 0
 
 
 def calculate_torso_angle(shoulder_pt: Tuple[float, float], hip_pt: Tuple[float, float]) -> float:
@@ -54,20 +40,6 @@ def calculate_aspect_ratio(bbox: Tuple[float, float, float, float]) -> float:
     return h / w
 
 
-def calculate_trajectory_displacement(points: List[Tuple[float, float]]) -> float:
-    """
-    Tính bán kính dịch chuyển tối đa so với tâm trung bình của quỹ đạo (Spatial Confinement).
-    Phục vụ nhận diện Lảng vảng (Loitering).
-    """
-    if len(points) < 2:
-        return 0.0
-    
-    arr = np.array(points)
-    center = np.mean(arr, axis=0)
-    distances = np.linalg.norm(arr - center, axis=1)
-    return float(np.max(distances))
-
-
 def normalize_skeleton_root_relative(
     keypoints_17: np.ndarray, 
     bbox: Tuple[float, float, float, float]
@@ -95,3 +67,31 @@ def normalize_skeleton_root_relative(
         norm_kpts[k, 1] = (keypoints_17[k, 1] - root_y) / height
         
     return norm_kpts.flatten()
+
+
+def is_same_person(kpts_a: Optional[np.ndarray], box_a, kpts_b: Optional[np.ndarray], box_b,
+                   conf_thresh: float = 0.3, max_mean_dist: float = 0.15, min_common: int = 5) -> bool:
+    """
+    Hai detection có phải cùng một người không (YOLO đôi khi vẽ 2 khung lồng nhau cho một người,
+    nhất là khi người nằm ngang hoặc ảnh bị xoay).
+    So bộ khớp xương: nếu >= min_common khớp cùng nhìn thấy và khoảng cách trung bình giữa các khớp
+    tương ứng < max_mean_dist x đường chéo khung nhỏ hơn thì coi là trùng.
+    Hai người thật đứng sát / ôm vật nhau vẫn có khớp xương lệch nhau rõ nên không bị gộp.
+    """
+    if kpts_a is None or kpts_b is None:
+        return False
+    a, b = np.asarray(kpts_a), np.asarray(kpts_b)
+    if a.shape != b.shape or a.ndim != 2 or a.shape[0] != 17:
+        return False
+    visible = np.ones(17, dtype=bool)
+    if a.shape[1] > 2:
+        visible = (a[:, 2] >= conf_thresh) & (b[:, 2] >= conf_thresh)
+    visible &= np.isfinite(a[:, :2]).all(axis=1) & np.isfinite(b[:, :2]).all(axis=1)
+    if int(visible.sum()) < min_common:
+        return False
+    diag = min(math.hypot(box_a[2] - box_a[0], box_a[3] - box_a[1]),
+               math.hypot(box_b[2] - box_b[0], box_b[3] - box_b[1]))
+    if diag <= 0:
+        return False
+    dist = np.linalg.norm(a[visible, :2] - b[visible, :2], axis=1).mean()
+    return float(dist) / diag < max_mean_dist

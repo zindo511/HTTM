@@ -115,6 +115,81 @@ class FightingTests(unittest.TestCase):
                 self.assertGreaterEqual(first_alert, .15)
                 self.assertLessEqual(first_alert, .15 + 1/fps)
 
+
+class ScuffleTests(unittest.TestCase):
+    """Đánh nhẹ / giằng co kéo dài: đòn không đủ nhanh nhưng liên tục vươn vào người đối phương."""
+
+    def simulate(self, seconds, limb=1.0, zone='BODY', walk=0.0, prob=0.03, fps=10):
+        det = FightingDetector({'confirm_seconds': 0.15, 'clip_model': {'threshold': .45}})
+        det._compute_limb_speed = Mock(return_value=limb)
+        det._compute_torso_agitation = Mock(return_value=0.2)
+        det._check_strike_zone = Mock(return_value=zone)
+        manager, alerts = TrackManager(), []
+        for i in range(int(seconds * fps)):
+            t = i / fps
+            dx = walk * 200 * t                     # cả cặp cùng di chuyển (BH/s, người cao 200 px)
+            tracks = [manager.update_track(1, (100 + dx, 100, 180 + dx, 300), (0, 0), None, t),
+                      manager.update_track(2, (170 + dx, 100, 250 + dx, 300), (0, 0), None, t)]
+            for a in det.process_all(tracks, t, None, model_prob=prob)['new_alerts']:
+                alerts.append((t, a))
+        return alerts
+
+    def test_sustained_light_scuffle_alerts_despite_model_veto(self):
+        alerts = self.simulate(4.0)
+        self.assertEqual(len(alerts), 1)
+        self.assertGreaterEqual(alerts[0][0], 1.8)   # cần đủ cửa sổ 2 giây
+
+    def test_short_scuffle_does_not_alert(self):
+        self.assertEqual(self.simulate(1.5), [])
+
+    def test_standing_close_and_talking_does_not_alert(self):
+        self.assertEqual(self.simulate(6.0, limb=0.4), [])
+
+    def test_no_reach_into_opponent_does_not_alert(self):
+        self.assertEqual(self.simulate(6.0, zone=None), [])
+
+    def test_walking_together_does_not_alert(self):
+        self.assertEqual(self.simulate(6.0, walk=1.0), [])
+
+
+class MergedPairModelTests(unittest.TestCase):
+    """Hai người ôm vật nhau bị YOLO gộp thành 1 khung: mô hình clip vẫn phải xác nhận được."""
+
+    def setUp(self):
+        self.det = FightingDetector({'confirm_frames': 99, 'clip_model': {'threshold': .45}})
+        self.det._compute_limb_speed = Mock(return_value=0)   # tắt luật theo cặp, chỉ xét mô hình
+        self.det._compute_torso_agitation = Mock(return_value=0)
+        self.manager = TrackManager()
+
+    def frame(self, t, boxes, prob):
+        tracks = [self.manager.update_track(i, b, (0, 0), None, t) for i, b in boxes]
+        return self.det.process_all(tracks, t, None, model_prob=prob)['new_alerts']
+
+    def test_pair_merges_into_one_box_still_alerts(self):
+        a, b = (100, 100, 180, 300), (170, 100, 250, 300)
+        alerts = []
+        for i in range(5):                       # 0.5 s: 2 người sát nhau, mô hình chưa chắc
+            alerts += self.frame(i / 10, [(1, a), (2, b)], .2)
+        for i in range(5, 20):                   # gộp thành 1 khung lớn, mô hình chắc chắn
+            alerts += self.frame(i / 10, [(3, (105, 95, 245, 305))], .8)
+        self.assertEqual(len(alerts), 1)
+        self.assertIn('#3', alerts[0]['extra_info'])
+
+    def test_single_person_without_prior_pair_does_not_alert(self):
+        alerts = []
+        for i in range(30):
+            alerts += self.frame(i / 10, [(1, (100, 100, 180, 300))], .9)
+        self.assertEqual(alerts, [])
+
+    def test_merge_memory_expires(self):
+        a, b = (100, 100, 180, 300), (170, 100, 250, 300)
+        self.frame(0, [(1, a), (2, b)], .2)
+        alerts = []
+        for i in range(40, 60):                  # 4 s sau mới có 1 khung với xác suất cao
+            alerts += self.frame(i / 10, [(3, (105, 95, 245, 305))], .9)
+        self.assertEqual(alerts, [])
+
+
 if __name__ == '__main__':
     unittest.main()
 

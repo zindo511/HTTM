@@ -1,91 +1,80 @@
-# CHƯƠNG 1: TỔNG QUAN VỀ BÀI TOÁN TRINH SÁT VÀ PHÁT HIỆN HÀNH VI BẤT THƯỜNG
+# CHƯƠNG 1: TỔNG QUAN VỀ BÀI TOÁN GIÁM SÁT VÀ PHÁT HIỆN HÀNH VI BẤT THƯỜNG
 
 ---
 
-## 1.1. Đặt vấn đề và nhu cầu giám sát an ninh tự động
+## 1.1. Đặt vấn đề và nhu cầu giám sát tự động
 
 ### 1.1.1. Bối cảnh thực tế
-Trong những năm gần đây, sự phát triển nhanh chóng của các đô thị, khu công nghiệp, ngân hàng và các tòa nhà thông minh kéo theo số lượng camera an ninh (CCTV) tăng trưởng theo cấp số nhân. Tuy nhiên, phần lớn các hệ thống camera hiện nay vẫn hoạt động theo cơ chế **giám sát thụ động**:
-- **Ghi hình để tra cứu hồi tố (Forensic/Post-event analysis):** Khi sự cố mất an ninh trật tự hoặc tai nạn xảy ra, con người mới tiến hành trích xuất lại video để điều tra nguyên nhân.
-- **Phụ thuộc vào nhân sự trực màn hình:** Các nghiên cứu chỉ ra rằng một nhân viên giám sát sau 20 phút nhìn liên tục vào các màn hình camera sẽ bỏ sót tới 95% các sự kiện bất thường do hiện tượng mỏi mắt, giảm tập trung và quá tải thông tin thị giác.
+Số lượng camera giám sát (CCTV) tại đô thị, trường học, bệnh viện, nhà xưởng và toà nhà tăng rất nhanh, nhưng phần lớn hệ thống vẫn hoạt động theo cơ chế **giám sát thụ động**:
+- **Ghi hình để tra cứu sau sự việc:** chỉ khi sự cố đã xảy ra, con người mới trích xuất video để tìm nguyên nhân.
+- **Phụ thuộc vào người trực màn hình:** một người không thể theo dõi liên tục nhiều màn hình trong thời gian dài; sự tập trung giảm nhanh và các sự kiện ngắn (một cú ngã, một vụ xô xát vài giây) rất dễ bị bỏ sót.
 
-### 1.1.2. Nhu cầu cấp thiết về hệ thống trinh sát tự động (AI Surveillance)
-Để giải quyết bài toán trên, nhu cầu chuyển đổi từ giám sát thụ động sang **trinh sát và giám sát chủ động (Proactive Surveillance)** là vô cùng cấp thiết:
-- **Tự động nhận diện thời gian thực:** Hệ thống sử dụng thị giác máy tính và trí tuệ nhân tạo để phân tích hành vi của con người liên tục 24/7 mà không cần sự can thiệp liên tục của nhân viên an ninh.
-- **Cảnh báo tức thời (Real-time Alerts):** Khi phát hiện dấu hiệu bất thường, hệ thống ngay lập tức kích hoạt chuông báo, gửi hình ảnh/video sự kiện đến người phụ trách nhằm ngăn chặn kịp thời trước khi hậu quả nghiêm trọng xảy ra.
+### 1.1.2. Nhu cầu về hệ thống giám sát chủ động
+Mục tiêu là chuyển từ giám sát thụ động sang **giám sát chủ động**:
+- **Tự động nhận diện theo thời gian thực:** hệ thống phân tích hành vi con người trong khung hình liên tục, không cần người nhìn màn hình.
+- **Cảnh báo tức thời:** khi phát hiện dấu hiệu bất thường, hệ thống phát âm thanh, hiển thị cảnh báo và lưu ảnh bằng chứng để người phụ trách xử lý kịp thời.
 
 ---
 
-## 1.2. Phân loại các hành vi bất thường trong video giám sát
+## 1.2. Ba hành vi bất thường được lựa chọn
 
-Khái niệm "bất thường" trong thị giác máy tính phụ thuộc mật thiết vào ngữ cảnh (context-dependent). Trong bài toán an ninh giám sát cơ bản, các hành vi bất thường được phân loại theo 3 trục chính:
+Khái niệm "bất thường" phụ thuộc vào ngữ cảnh. Đề tài tập trung vào **ba hành vi thuộc nhóm hành động / động học**, là những hành vi có thể nhận biết từ chuyển động và tư thế cơ thể mà không cần biết trước bố cục hiện trường (không cần vẽ vùng cấm):
 
 ```mermaid
 graph TD
-    A[Hành vi bất thường trong Camera] --> B[1. Không gian - Spatial]
-    A --> C[2. Thời gian - Temporal]
-    A --> D[3. Hành động/Động học - Action]
-
-    B --> B1["Xâm nhập (Intrusion)<br>Vào khu vực cấm / rào ảo"]
-    C --> C1["Lảng vảng (Loitering)<br>Hiện diện quá lâu bất thường"]
-    D --> D1["Chạy (Running)<br>Vận tốc tăng vọt"]
-    D --> D2["Ngã (Falling)<br>Tư thế sụp đổ bất thường"]
+    A[Hành vi bất thường được giám sát] --> B["Chạy nhanh (Running)<br>Vận tốc di chuyển tăng vọt"]
+    A --> C["Té ngã (Falling)<br>Hạ người nhanh rồi nằm trên sàn"]
+    A --> D["Đánh nhau (Fighting)<br>Hai người áp sát, ra đòn hoặc giằng co"]
 ```
 
-### 1.2.1. Bất thường theo Không gian (Spatial Anomalies) - Xâm nhập (Intrusion)
-- **Đặc trưng:** Đối tượng xuất hiện tại những vị trí hoặc khu vực không được phép vào (vùng cấm - Restricted Zones, kho bãi ban đêm, hàng rào an ninh).
-- **Nguyên lý phát hiện (Mức độ 1 - Thiết lập vùng cấm ảo đa giác):**
-  - Hệ thống cho phép người vận hành linh hoạt vẽ các vùng cấm ảo dạng đa giác tùy ý (Polygon Region of Interest - ROI) trực tiếp trên khung hình camera.
-  - Khi phát hiện đối tượng người, hệ thống trích xuất tọa độ điểm tiếp đất (Foot Point - trung điểm cạnh đáy Bounding Box: $x_{foot} = \frac{x_1 + x_2}{2}, y_{foot} = y_2$).
-  - Thuật toán kiểm tra điểm nằm trong đa giác (Point-in-Polygon) sẽ xác định thời điểm chính xác khi đối tượng đặt chân vào vùng cấm để kích hoạt báo động tức thì.
-  - *Ưu điểm:* Hoạt động ổn định ở mọi góc nhìn camera trên cao/góc rộng, không yêu cầu thấy rõ khuôn mặt và đạt tốc độ xử lý thời gian thực rất cao.
+### 1.2.1. Chạy nhanh (Running)
+- **Đặc trưng:** vận tốc di chuyển cao bất thường so với đi bộ, thường kèm thân người đổ về phía trước.
+- **Ngữ cảnh:** truy đuổi, bỏ chạy, cướp giật, hoảng loạn do sự cố.
+- **Nguyên lý phát hiện:** đo quãng đường tâm khung người dịch chuyển trong một cửa sổ thời gian ngắn rồi **chia cho chiều cao cơ thể trong ảnh**, thu được vận tốc tính bằng "số lần chiều cao cơ thể mỗi giây" (BH/s). Cách chuẩn hoá này làm giảm ảnh hưởng của hiệu ứng gần to – xa nhỏ: cùng một tốc độ thật cho giá trị gần như nhau dù người đứng gần hay xa camera.
 
-### 1.2.2. Bất thường theo Thời gian (Temporal Anomalies) - Lảng vảng (Loitering)
-- **Đặc trưng:** Một đối tượng xuất hiện hợp lệ trong không gian nhưng lại lưu trú với thời lượng vượt quá mức bình thường mà không có mục đích rõ ràng (ví dụ: đứng quá lâu trước cây ATM, quẩn quanh trước cổng biệt thự, hành lang ngân hàng để thám thính).
-- **Nguyên lý phát hiện:** Dựa trên kỹ thuật bám vết (Object Tracking) để duy trì định danh (Track ID) của từng đối tượng qua từng khung hình; tính toán tích lũy thời gian cư trú (Dwell Time) và kiểm tra bán kính di chuyển trong vùng giám sát.
+### 1.2.2. Té ngã (Falling)
+- **Đặc trưng:** tư thế chuyển nhanh từ thẳng đứng sang thấp/nằm ngang, trọng tâm hạ nhanh theo phương thẳng đứng, sau đó người nằm lại trên sàn.
+- **Ngữ cảnh:** người già hoặc người bệnh ngã, tai nạn lao động, nạn nhân bị tấn công.
+- **Nguyên lý phát hiện:** một máy trạng thái theo thời gian yêu cầu đủ hai pha liên tiếp — (1) hạ người nhanh, (2) giữ tư thế thấp/nằm ngang đủ lâu — mới phát cảnh báo. Yêu cầu cả hai pha giúp phân biệt ngã với cúi nhặt đồ hoặc ngồi xuống từ từ.
 
-### 1.2.3. Bất thường theo Hành động / Động học (Action/Kinematic Anomalies) - Chạy / Ngã
-- **Hành vi Chạy (Running):** 
-  - Biểu hiện qua sự thay đổi đột ngột về vận tốc di chuyển và gia tốc của đối tượng qua các khung hình liên tiếp.
-  - **Cơ chế xử lý giải quyết hiệu ứng phối cảnh (Gần to - Xa nhỏ):**
-    - Hệ thống áp dụng phương pháp **chuẩn hóa vận tốc theo chiều cao khung bao ($H$)** của chính đối tượng trong cửa sổ trượt $5 - 10 \text{ frames}$ ($\approx 0.2 - 0.3\text{s}$):
-      - *Đi bộ bình thường:* Quãng đường dịch chuyển chỉ đạt khoảng $0.5 - 0.8$ lần chiều cao cơ thể/giây (hoặc tương đương $30 - 60 \text{ px/s}$ ở cự ly trung bình).
-      - *Chạy bứt tốc:* Vận tốc vọt lên gấp $2.5 - 3$ lần ($\ge 1.5 - 2.0$ lần chiều cao cơ thể/giây) kèm theo gia tốc tăng đột ngột.
-    - Nhờ vậy, chỉ cần đối tượng có động tác bứt tốc trong $1 - 1.5\text{m}$ đầu tiên là hệ thống đã phát hiện được ngay mà không bị ảnh hưởng bởi việc đối tượng đứng gần hay xa ống kính camera.
-  - Ngữ cảnh thường gắn liền với hành vi truy đuổi, trốn chạy, cướp giật hoặc hoảng loạn do sự cố.
-- **Hành vi Ngã (Falling):**
-  - Biểu hiện qua sự biến đổi đột ngột về tư thế (từ thẳng đứng sang nằm ngang) và sự dịch chuyển nhanh chóng của trọng tâm cơ thể theo phương thẳng đứng hướng xuống mặt đất.
-  - Ngữ cảnh liên quan đến an toàn sức khỏe (người già/người bệnh đột quỵ, công nhân ngã giàn giáo, nạn nhân bị tấn công).
+### 1.2.3. Đánh nhau (Fighting)
+- **Đặc trưng:** hai người ở rất gần nhau, tay/chân chuyển động nhanh hướng vào vùng cơ thể đối phương, hoặc ôm vật giằng co, hoặc lao vào nhau.
+- **Ngữ cảnh:** ẩu đả, hành hung, bạo lực học đường.
+- **Nguyên lý phát hiện:** với mỗi cặp người đứng gần nhau, hệ thống kết hợp khoảng cách giữa hai người, vận tốc khớp tay/chân so với thân, mức độ giật lắc của thân và tốc độ áp sát. Đây là hành vi **khó nhất** trong ba hành vi vì phụ thuộc vào việc tách được hai bộ khung xương riêng biệt.
 
 ---
 
-## 1.3. Các thách thức thực tế trong môi trường triển khai
+## 1.3. Các thách thức thực tế
 
-Triển khai bài toán trinh sát trên camera thực tế đối mặt với nhiều rào cản kỹ thuật:
-
-| Thách thức | Mô tả chi tiết | Tác động lên thuật toán |
+| Thách thức | Mô tả | Tác động lên hệ thống |
 | :--- | :--- | :--- |
-| **Che khuất (Occlusion)** | Đối tượng bị che khuất một phần hoặc hoàn toàn bởi vật thể khác (cột đèn, cây cối, xe cộ) hoặc do nhiều người đi sát nhau. | Làm đứt đoạn chuỗi bám vết (Lost Track), gây ra hiện tượng nhảy ID (ID Switching) dẫn đến sai sót khi tính thời gian lảng vảng. |
-| **Biến đổi ánh sáng (Illumination Variations)** | Thay đổi giữa ngày và đêm, ngược sáng, ánh đèn xe rọi, bóng đổ (shadows) của người trên mặt đất. | Bounding box bị co giãn sai, bóng đổ có thể bị nhận diện nhầm vào vùng cấm hoặc gây nhiễu khung xương nhận diện. |
-| **Góc nhìn phối cảnh (Perspective Distortion)** | Camera giám sát đặt trên cao nhìn xéo xuống tạo hiệu ứng xa nhỏ - gần to. | Vận tốc di chuyển tính bằng pixel ở xa sẽ nhỏ hơn rất nhiều so với ở gần; tỷ lệ khung hình Bbox thay đổi theo góc nhìn. |
-| **Độ trễ và xử lý thời gian thực (Real-time Latency)** | Hệ thống cần xử lý luồng video liên tục ở mức $\ge 20 - 30$ FPS để đưa ra cảnh báo tức thời. | Đòi hỏi mô hình Deep Learning phải tối ưu hóa cao (dòng YOLO nhẹ như Nano/Small) và thuật toán logic đi kèm không được có độ phức tạp tính toán lớn. |
+| **Che khuất (Occlusion)** | Người bị che một phần hoặc toàn bộ bởi vật thể hay người khác. | Mất khớp xương, đứt chuỗi bám vết, đổi ID. Đặc biệt nghiêm trọng với đánh nhau: hai người vật lộn thường bị mô hình gộp thành **một** khung người. |
+| **Phối cảnh (Perspective)** | Camera đặt cao nhìn xéo, người ở xa nhỏ hơn người ở gần. | Vận tốc tính bằng pixel không so sánh được giữa các vị trí; phải chuẩn hoá theo chiều cao cơ thể. Người di chuyển dọc theo trục nhìn của camera gần như không dịch chuyển trong ảnh. |
+| **Hành vi dễ nhầm** | Cúi nhặt đồ, ngồi xổm, nằm nghỉ (giống ngã); đi nhanh (giống chạy); ôm, bắt tay, nhảy, chơi thể thao (giống đánh nhau). | Gây báo động giả. Cần điều kiện theo thời gian và tập âm tính khó để đánh giá. |
+| **Ánh sáng** | Ngược sáng, ban đêm, bóng đổ. | Giảm độ chính xác ước lượng khớp xương. |
+| **Tốc độ xử lý** | Cần xử lý liên tục và không tích luỹ độ trễ. | Tốc độ khung hình của khâu AI thay đổi theo phần cứng, nên mọi ngưỡng phải tính theo **thời gian thực (giây)**, không theo số khung hình. |
 
 ---
 
 ## 1.4. Phạm vi và mục tiêu của đề tài
 
-### 1.4.1. Mục tiêu đề tài
-Xây dựng một hệ thống phần mềm trinh sát thông minh ứng dụng thị giác máy tính và học sâu (Deep Learning), có khả năng:
-1. Tiếp nhận và xử lý luồng video giám sát từ các nguồn đầu vào (file video, camera USB/Webcam, hoặc luồng RTSP camera IP).
-2. Tự động nhận diện và phân tích hành vi của con người trong khu vực quan sát theo thời gian thực.
-3. Kích hoạt cảnh báo trực quan trên màn hình và ghi nhận nhật ký (log) sự kiện đối với 3 hành vi: **Xâm nhập**, **Lảng vảng**, và **Chạy / Ngã**.
+### 1.4.1. Mục tiêu
+Xây dựng một hệ thống phần mềm có khả năng:
+1. Nhận video từ file, webcam hoặc camera IP (RTSP/HTTP).
+2. Phát hiện người, ước lượng 17 khớp xương và bám vết từng người theo thời gian thực.
+3. Phát hiện ba hành vi **Chạy nhanh**, **Té ngã**, **Đánh nhau**; khi phát hiện thì hiển thị cảnh báo trên giao diện web, phát âm thanh, lưu ảnh bằng chứng và ghi nhật ký sự kiện.
 
-### 1.4.2. Phạm vi nghiên cứu và Giới hạn giả định
-- **Đối tượng nhận diện:** Con người (`person`).
-- **Môi trường ứng dụng:** Camera an ninh có góc quan sát tĩnh (Static Camera), lắp đặt tại khu vực trong nhà hoặc ngoài trời có điều kiện ánh sáng cơ bản.
-- **Giới hạn và đặc thù góc đặt camera:**
-  - *Hạn chế khi góc nghiêng thân người (Body Lean) bị khuất:* Nếu đối tượng chạy thẳng trực diện vào chính giữa ống kính (hoặc chạy thẳng ra xa theo đúng trục quang học $Z$ của camera), góc nghiêng trục lưng ($\theta$) chiếu trên mặt phẳng ảnh 2D sẽ khó quan sát hơn so với khi đối tượng chạy ngang hoặc chạy chéo qua màn hình.
-  - *Giải pháp bổ trợ:* Trong trường hợp chuyển động dọc trục quang học, hệ thống sẽ kết hợp giữa **sự thay đổi đột ngột về kích thước Bounding Box** (tốc độ phóng to/thu nhỏ nhanh của $H$) cùng với **tần suất nâng đầu gối và vung tay (Pose Keypoints)** để làm cơ sở ra quyết định chính xác.
-- **Tập trung công nghệ:**
-  - Tận dụng sức mạnh của các mô hình học sâu hiện đại (họ YOLOv8/YOLOv11 và YOLO-Pose) kết hợp thuật toán bám vết đa đối tượng (ByteTrack).
-  - Tập trung thiết kế các thuật toán logic suy luận hành vi (Heuristic Rules & Spatial-Temporal Analysis) đạt độ tin cậy cao mà vẫn bảo đảm tốc độ xử lý thời gian thực.
+### 1.4.2. Phạm vi và giới hạn
+- **Đối tượng:** con người (`person`).
+- **Camera:** cố định (không xoay, không zoom), nhìn ngang hoặc nhìn xéo từ trên xuống, đủ sáng để thấy rõ cơ thể.
+- **Không thuộc phạm vi:** phát hiện xâm nhập vùng cấm, lảng vảng, nhận diện khuôn mặt, tái định danh giữa nhiều camera.
+- **Giới hạn đã biết:**
+  - *Chạy dọc trục camera:* người chạy thẳng về phía camera hoặc ra xa gần như không dịch chuyển trong mặt phẳng ảnh, nên vận tốc đo được thấp hơn thực tế và có thể bị bỏ sót.
+  - *Người đã nằm sẵn khi vào khung hình:* không có pha hạ người nên không được coi là ngã.
+  - *Vật lộn sát nhau:* khi hai người bị gộp thành một khung, phương pháp theo cặp người không còn dữ liệu để so sánh.
+  - *Góc nhìn thẳng từ trần xuống:* khung xương 2D không còn mang thông tin tư thế đứng/nằm.
+
+### 1.4.3. Hướng tiếp cận
+- Dùng mô hình **YOLOv8n-Pose** để phát hiện người và 17 khớp xương, kết hợp **ByteTrack** để bám vết.
+- Phát hiện hành vi bằng **luật hình học – động học theo thời gian** trên khung người và khớp xương: dễ giải thích, dễ điều chỉnh, chạy nhanh trên CPU.
+- Dự kiến bổ sung **mô hình học sâu** làm tầng xác minh cho các trường hợp luật không đủ tin cậy (xác minh té ngã bằng chuỗi khớp xương; phân loại đánh nhau). Trạng thái thực hiện của từng phần được ghi ở Chương 3 và Chương 4.

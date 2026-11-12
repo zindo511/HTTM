@@ -26,7 +26,6 @@ class AlertManager:
         
         # Ngưỡng cooldown mặc định theo từng loại sự kiện (giây)
         self.default_cooldowns: Dict[str, float] = {
-            "LOITERING": 10.0,
             "RUNNING": 4.0,
             "FALLING": 15.0,
             "FIGHTING": 6.0
@@ -75,18 +74,21 @@ class AlertManager:
             cv2.imwrite(snapshot_path, frame)
             
             # 2. Lưu bản ghi vào cơ sở dữ liệu SQLite (nếu có db_service)
+            event_id = None
             if self.db_service:
-                self.db_service.insert_event(
+                event_id = self.db_service.insert_event(
                     track_id=track_id,
                     event_type=event_type,
                     zone_id=zone_id,
                     confidence=confidence,
                     snapshot_path=snapshot_path,
-                    timestamp=time_str
+                    timestamp=time_str,
+                    extra_info=extra_info
                 )
             
             # 3. Tạo gói tin đẩy qua WebSocket lên giao diện Web Dashboard
             payload = {
+                "event_id": event_id,
                 "event_type": str(event_type),
                 "track_id": int(track_id),
                 "zone_id": str(zone_id) if zone_id is not None else "N/A",

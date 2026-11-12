@@ -3,8 +3,9 @@ import json
 import asyncio
 import shutil
 from typing import List
+from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, UploadFile, File
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from src.core.shared_stream import SharedVideoStream
@@ -19,6 +20,12 @@ app.mount("/static", StaticFiles(directory="web/static"), name="static")
 app.mount("/snapshots", StaticFiles(directory="data/snapshots"), name="snapshots")
 
 templates = Jinja2Templates(directory="web/templates")
+DEMO_CLIPS = (
+    ("Đi bộ", "data/test_videos/people_walking.mp4"),
+    ("Chạy nhanh", "data/test_videos/public/sphar/running__casia_angleview_p01_run_a1.mp4"),
+    ("Té ngã", "data/test_videos/fall_sample.mp4"),
+    ("Đánh nhau", "data/test_videos/fight1.mp4"),
+)
 
 # Quản lý các kết nối WebSocket đang hoạt động
 class ConnectionManager:
@@ -77,18 +84,8 @@ def broadcast_alert_sync(payload: dict):
     future.add_done_callback(report_result)
 
 
-def _db_zone_to_pipeline_zone(row: dict) -> dict:
-    """Chuyển bản ghi bảng zones (SQLite) về định dạng zone dùng trong pipeline"""
-    return {
-        "id": row["zone_id"],
-        "name": row["zone_name"],
-        "type": row["zone_type"],
-        "polygon": row["polygon_points"],
-    }
-
-
 @app.on_event("startup")
-async def load_zones_from_db():
+async def start_shared_stream():
     global global_loop
     global_loop = asyncio.get_running_loop()
     print("[WS] Đã gắn event loop của server.")
@@ -98,17 +95,13 @@ async def load_zones_from_db():
 
     shared_stream.start()
 
-    existing_ids = {z.get("id") for z in global_pipeline.zones}
-
-    for row in global_pipeline.db_service.load_zones():
-        if row["zone_id"] not in existing_ids:
-            global_pipeline.zones.append(_db_zone_to_pipeline_zone(row))
-            existing_ids.add(row["zone_id"])
-
 
 @app.get("/", response_class=HTMLResponse)
 async def get_index(request: Request):
-    return templates.TemplateResponse(request=request, name="index.html")
+    return templates.TemplateResponse(request=request, name="index.html", context={
+        "demo_clips": [(name, path) for name, path in DEMO_CLIPS if Path(path).is_file()],
+        "current_source": str(global_capture.source) if global_capture is not None else None,
+    })
 
 
 @app.websocket("/ws/alerts")
@@ -145,31 +138,6 @@ async def video_feed():
     )
 
 
-@app.post("/api/zones")
-async def add_zone(request: Request):
-    global global_pipeline
-    data = await request.json()
-    if global_pipeline:
-        global_pipeline.zones.append(data)
-        # Lưu vào SQLite
-        global_pipeline.db_service.save_zone(
-            zone_id=data.get("id"),
-            zone_name=data.get("name"),
-            zone_type=data.get("type", "LOITERING_ZONE"),
-            polygon_points=data.get("polygon", [])
-        )
-    return {"status": "success", "zones": global_pipeline.zones if global_pipeline else []}
-
-
-@app.post("/api/zones/clear")
-async def clear_zones():
-    global global_pipeline
-    if global_pipeline:
-        global_pipeline.zones = []
-        global_pipeline.db_service.clear_all_zones()
-    return {"status": "cleared"}
-
-
 @app.get("/api/events")
 async def get_events():
     global global_pipeline
@@ -177,16 +145,17 @@ async def get_events():
         return []
     # Trả về cùng định dạng với gói tin WebSocket /ws/alerts để frontend dùng chung
     events = []
-    for row in global_pipeline.db_service.get_recent_events(limit=30):
+    for row in global_pipeline.db_service.get_recent_events(limit=50):
         snapshot_name = os.path.basename((row.get("snapshot_path") or "").replace("\\", "/"))
         events.append({
+            "event_id": row.get("event_id"),
             "event_type": row["event_type"],
             "track_id": row["track_id"],
             "zone_id": row["zone_id"] or "N/A",
             "confidence": round((row["confidence"] or 0) * 100, 1),
             "timestamp": row["timestamp"],
             "snapshot_url": f"/snapshots/{snapshot_name}",
-            "extra_info": "",
+            "extra_info": row.get("extra_info") or "",
         })
     return events
 
@@ -200,36 +169,88 @@ async def get_event_stats():
     return {"total": sum(by_type.values()), "by_type": by_type}
 
 
+@app.delete("/api/events/{event_id}")
+async def delete_event(event_id: int):
+    global global_pipeline
+    if not global_pipeline:
+        return _error("Hệ thống chưa sẵn sàng", 503)
+    global_pipeline.db_service.delete_event(event_id)
+    by_type = global_pipeline.db_service.count_events_by_type()
+    return {"status": "success", "stats": {"total": sum(by_type.values()), "by_type": by_type}}
+
+
+@app.delete("/api/events")
+async def clear_events(event_type: str = "ALL"):
+    global global_pipeline
+    if not global_pipeline:
+        return _error("Hệ thống chưa sẵn sàng", 503)
+    deleted = global_pipeline.db_service.clear_events(event_type)
+    by_type = global_pipeline.db_service.count_events_by_type()
+    return {"status": "success", "deleted": deleted, "stats": {"total": sum(by_type.values()), "by_type": by_type}}
+
+
+UPLOAD_DIR = "data/test_videos"
+ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv"}
+
+
+def _error(message: str, status_code: int = 400) -> JSONResponse:
+    return JSONResponse({"status": "error", "message": message}, status_code=status_code)
+
+
+def _switch_source(new_source) -> bool:
+    """Mở nguồn mới trước; chỉ thay nguồn cũ khi mở thành công để stream không bị chết."""
+    global global_capture
+    from src.core.capture import CaptureThread
+
+    old_capture = global_capture
+    same_device = (old_capture is not None and isinstance(new_source, int)
+                   and old_capture.source == new_source)
+    if same_device:
+        # Webcam không mở được 2 lần cùng lúc: buộc phải đóng trước.
+        old_capture.stop()
+    camera = global_pipeline.config.get("camera", {}) if global_pipeline else {}
+    new_capture = CaptureThread(source=new_source, buffer_size=camera.get("buffer_size", 2),
+                                file_sample_fps=camera.get("file_sample_fps"),
+                                max_frame_side=camera.get("max_frame_side"),
+                                rotate=camera.get("rotate", 0))
+    if not new_capture.start_capture():
+        if same_device:
+            global_capture = None
+        return False
+    global_capture = new_capture
+    if old_capture is not None and not same_device:
+        old_capture.stop()
+    return True
+
+
 @app.post("/api/change_source")
 async def change_source(request: Request):
     """Đổi nguồn video ngay tức thì mà không cần khởi động lại server"""
-    global global_capture
     data = await request.json()
     new_source = data.get("source")
-    if new_source is not None:
-        if str(new_source).isdigit():
-            new_source = int(new_source)
-        if global_capture:
-            global_capture.stop()
-            from src.core.capture import CaptureThread
-            global_capture = CaptureThread(source=new_source, buffer_size=2)
-            global_capture.start_capture()
-        return {"status": "success", "new_source": str(new_source)}
-    return {"status": "error", "message": "Source missing"}
+    if new_source is None or str(new_source).strip() == "":
+        return _error("Thiếu nguồn video")
+    if str(new_source).isdigit():
+        new_source = int(new_source)
+    if not _switch_source(new_source):
+        return _error(f"Không mở được nguồn video: {new_source}")
+    return {"status": "success", "new_source": str(new_source)}
 
 
 @app.post("/api/upload_video")
 async def upload_video(file: UploadFile = File(...)):
-    """Tải file video MP4 từ trình duyệt lên và phát tự động"""
-    global global_capture
-    dest_path = os.path.join("data/test_videos", file.filename)
+    """Tải file video từ trình duyệt lên và phát tự động"""
+    # Chỉ giữ tên file, bỏ mọi thành phần đường dẫn do client gửi lên.
+    filename = os.path.basename((file.filename or "").replace("\\", "/"))
+    if not filename or os.path.splitext(filename)[1].lower() not in ALLOWED_VIDEO_EXTENSIONS:
+        return _error("Chỉ nhận file video: " + ", ".join(sorted(ALLOWED_VIDEO_EXTENSIONS)))
+
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    dest_path = os.path.join(UPLOAD_DIR, filename).replace("\\", "/")
     with open(dest_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
-    
-    if global_capture:
-        global_capture.stop()
-        from src.core.capture import CaptureThread
-        global_capture = CaptureThread(source=dest_path, buffer_size=2)
-        global_capture.start_capture()
+
+    if not _switch_source(dest_path):
+        return _error("Đã lưu file nhưng không mở được video này")
     return {"status": "success", "video_path": dest_path}
 

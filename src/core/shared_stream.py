@@ -30,6 +30,7 @@ class SharedVideoStream:
             self.thread.join(timeout=5)
 
     def _run(self):
+        previous_capture = None
         while not self.stopped.is_set():
             capture = self.capture_provider()
             pipeline = self.pipeline_provider()
@@ -40,6 +41,9 @@ class SharedVideoStream:
             if item is None or capture is not self.capture_provider():
                 continue
             try:
+                if capture is not previous_capture:
+                    pipeline.request_reset()
+                    previous_capture = capture
                 frame = pipeline.process_frame(*item)
                 ok, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
                 if ok:

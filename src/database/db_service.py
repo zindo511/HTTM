@@ -1,6 +1,5 @@
 import sqlite3
 import os
-import json
 import struct
 import threading
 from typing import List, Dict, Optional, Any
@@ -9,7 +8,7 @@ from typing import List, Dict, Optional, Any
 class DatabaseService:
     """
     Quản lý lưu trữ cơ sở dữ liệu SQLite cho hệ thống trinh sát.
-    Bao gồm 3 bảng chính: ZONES, TRACKS, EVENTS.
+    Bao gồm 2 bảng: TRACKS, EVENTS.
     """
     def __init__(self, db_path: str = "data/surveillance.db"):
         self.db_path = db_path
@@ -27,19 +26,7 @@ class DatabaseService:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             
-            # 1. Bảng ZONES (Vùng cấm & vùng giám sát)
-            cursor.execute("""
-            CREATE TABLE IF NOT EXISTS zones (
-                zone_id TEXT PRIMARY KEY,
-                zone_name TEXT NOT NULL,
-                zone_type TEXT NOT NULL,
-                polygon_points TEXT NOT NULL,
-                loiter_threshold REAL DEFAULT 10.0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """)
-
-            # 2. Bảng TRACKS (Đối tượng theo dõi)
+            # 1. Bảng TRACKS (Đối tượng theo dõi)
             cursor.execute("""
             CREATE TABLE IF NOT EXISTS tracks (
                 track_id INTEGER PRIMARY KEY,
@@ -49,7 +36,7 @@ class DatabaseService:
             )
             """)
 
-            # 3. Bảng EVENTS (Nhật ký cảnh báo sự kiện vi phạm)
+            # 2. Bảng EVENTS (Nhật ký cảnh báo sự kiện vi phạm)
             cursor.execute("""
             CREATE TABLE IF NOT EXISTS events (
                 event_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,23 +49,28 @@ class DatabaseService:
                 resolution_status TEXT DEFAULT 'PENDING'
             )
             """)
+            # CSDL cũ chưa có cột mô tả sự kiện -> bổ sung tại chỗ
+            columns = {row[1] for row in cursor.execute("PRAGMA table_info(events)")}
+            if "extra_info" not in columns:
+                cursor.execute("ALTER TABLE events ADD COLUMN extra_info TEXT")
             conn.commit()
 
     def insert_event(
-        self, 
-        track_id: int, 
-        event_type: str, 
-        zone_id: Optional[str], 
-        confidence: float, 
-        snapshot_path: str, 
-        timestamp: str
+        self,
+        track_id: int,
+        event_type: str,
+        zone_id: Optional[str],
+        confidence: float,
+        snapshot_path: str,
+        timestamp: str,
+        extra_info: Optional[str] = None
     ) -> int:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-            INSERT INTO events (track_id, zone_id, event_type, confidence, snapshot_path, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """, (track_id, zone_id, event_type, float(confidence), snapshot_path, timestamp))
+            INSERT INTO events (track_id, zone_id, event_type, confidence, snapshot_path, timestamp, extra_info)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (track_id, zone_id, event_type, float(confidence), snapshot_path, timestamp, extra_info))
             conn.commit()
             event_id = cursor.lastrowid
 
@@ -101,7 +93,7 @@ class DatabaseService:
         """Số cảnh báo theo từng loại hành vi (dùng cho thanh footer trên web)"""
         with self._count_lock:
             counts = dict(self._event_counts)
-        for event_type in ("LOITERING", "RUNNING", "FALLING", "FIGHTING"):
+        for event_type in ("RUNNING", "FALLING", "FIGHTING"):
             counts.setdefault(event_type, 0)
         return counts
 
@@ -120,30 +112,29 @@ class DatabaseService:
                 events.append(d)
             return events
 
-    def save_zone(self, zone_id: str, zone_name: str, zone_type: str, polygon_points: list, loiter_threshold: float = 10.0):
+    def delete_event(self, event_id: int) -> bool:
+        """Xoá 1 cảnh báo theo ID và đồng bộ lại bộ đếm."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-            INSERT OR REPLACE INTO zones (zone_id, zone_name, zone_type, polygon_points, loiter_threshold)
-            VALUES (?, ?, ?, ?, ?)
-            """, (zone_id, zone_name, zone_type, json.dumps(polygon_points), loiter_threshold))
+            cursor.execute("DELETE FROM events WHERE event_id = ?", (int(event_id),))
+            deleted = cursor.rowcount > 0
             conn.commit()
+        if deleted:
+            with self._count_lock:
+                self._event_counts = self._load_event_counts()
+        return deleted
 
-    def load_zones(self) -> List[Dict[str, Any]]:
-        with self._get_connection() as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM zones")
-            rows = cursor.fetchall()
-            result = []
-            for row in rows:
-                d = dict(row)
-                d["polygon_points"] = json.loads(d["polygon_points"])
-                result.append(d)
-            return result
-
-    def clear_all_zones(self):
+    def clear_events(self, event_type: Optional[str] = None) -> int:
+        """Xoá toàn bộ cảnh báo hoặc xoá theo loại hành vi và đồng bộ lại bộ đếm."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM zones")
+            if event_type and event_type != "ALL":
+                cursor.execute("DELETE FROM events WHERE event_type = ?", (event_type,))
+            else:
+                cursor.execute("DELETE FROM events")
+            deleted = cursor.rowcount
             conn.commit()
+        with self._count_lock:
+            self._event_counts = self._load_event_counts()
+        return deleted
+

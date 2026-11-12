@@ -9,6 +9,16 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
+# Python 3.12 trên Windows: platform.machine()/uname() truy vấn WMI; nếu dịch vụ WMI bị treo
+# thì import numpy/torch/ultralytics treo vĩnh viễn. Bỏ WMI để platform dùng cách dự phòng.
+if sys.platform == "win32":
+    import platform
+
+    def _skip_wmi(*args, **kwargs):
+        raise OSError("WMI query skipped")
+
+    platform._wmi_query = _skip_wmi
+
 from src.core.capture import CaptureThread
 from src.core.pipeline import SurveillancePipeline
 import web.app as web_module
@@ -25,7 +35,7 @@ def load_config(config_path: str = "configs/config.yaml") -> dict:
 def main():
     print("=" * 70)
     print("   HỆ THỐNG TRINH SÁT AN NINH THỜI GIAN THỰC (AI SURVEILLANCE)")
-    print("   Phát hiện hành vi bất thường: Lảng vảng | Chạy / Té ngã")
+    print("   Phát hiện hành vi bất thường: Chạy nhanh | Té ngã | Đánh nhau")
     print("=" * 70)
 
     # 1. Tải cấu hình
@@ -36,7 +46,10 @@ def main():
     # 2. Khởi tạo luồng thu hình Tầng 1 (CaptureThread với Drop-Oldest Queue)
     source = cam_cfg.get("source", 0)
     buffer_size = cam_cfg.get("buffer_size", 2)
-    capture_thread = CaptureThread(source=source, buffer_size=buffer_size)
+    capture_thread = CaptureThread(source=source, buffer_size=buffer_size,
+                                   file_sample_fps=cam_cfg.get("file_sample_fps"),
+                                   max_frame_side=cam_cfg.get("max_frame_side"),
+                                   rotate=cam_cfg.get("rotate", 0))
     if not capture_thread.start_capture():
         print("[ERROR] Không thể khởi chạy luồng camera. Vui lòng kiểm tra lại thiết bị hoặc file video!")
         return

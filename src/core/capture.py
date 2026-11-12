@@ -1,3 +1,4 @@
+import os
 import time
 import sys
 import threading
@@ -46,10 +47,23 @@ class CaptureThread(threading.Thread):
     Đọc luồng RTSP / Webcam / Video file ở tốc độ cao nhất của camera
     và đẩy vào DropOldestQueue để luồng AI xử lý mà không gây nghẽn buffer.
     """
-    def __init__(self, source: Union[int, str], buffer_size: int = 2):
+    def __init__(self, source: Union[int, str], buffer_size: int = 2, file_sample_fps: Optional[float] = None,
+                 max_frame_side: Optional[int] = None, rotate: int = 0):
         super().__init__(daemon=True)
         self.source = source
-        self.buffer = DropOldestQueue(maxsize=buffer_size)
+        # Video 4K làm chậm giải mã, vẽ và mã hóa JPEG; YOLO vẫn chỉ chạy ở imgsz 640
+        self.max_frame_side = max_frame_side
+        # Xoay khung camera trực tiếp (điện thoại dựng đứng qua DroidCam bị phát nằm ngang).
+        # Không áp dụng cho file video, vì file đã đúng chiều.
+        is_file = isinstance(source, str) and os.path.isfile(source)
+        self.rotate_code = None if is_file else {
+            90: cv2.ROTATE_90_CLOCKWISE, 180: cv2.ROTATE_180, 270: cv2.ROTATE_90_COUNTERCLOCKWISE,
+        }.get(int(rotate or 0) % 360)
+        self.is_video_file = isinstance(source, str) and not source.startswith(("rtsp://", "http://", "https://"))
+        self.file_sample_fps = file_sample_fps if self.is_video_file else None
+        self.buffer = (Queue(maxsize=buffer_size) if self.file_sample_fps
+                       else DropOldestQueue(maxsize=buffer_size))
+        self.stop_event = threading.Event()
         self.running = False
         self.cap: Optional[cv2.VideoCapture] = None
         self.fps: float = 30.0
@@ -67,12 +81,14 @@ class CaptureThread(threading.Thread):
         self.frame_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 720)
         
         self.running = True
-        self.is_video_file = isinstance(self.source, str) and not str(self.source).startswith(("rtsp://", "http://", "https://"))
         self.start()
         print(f"[INFO] Khởi chạy luồng Capture thành công. Nguồn: {self.source} ({self.frame_width}x{self.frame_height} @ {self.fps:.1f} FPS)")
         return True
 
     def run(self):
+        if self.file_sample_fps:
+            self._run_sampled_file()
+            return
         # Tính khoảng cách thời gian giữa 2 khung hình để video phát đúng tốc độ thực tế (1x)
         frame_interval = 1.0 / max(1.0, self.fps)
         last_frame_time = time.time()
@@ -102,7 +118,52 @@ class CaptureThread(threading.Thread):
                     continue
 
             timestamp = time.time()
-            self.buffer.put((frame, timestamp))
+            self.buffer.put((self._downscale(frame), timestamp))
+
+    def _downscale(self, frame):
+        if frame is not None and self.rotate_code is not None:
+            frame = cv2.rotate(frame, self.rotate_code)
+        limit = self.max_frame_side
+        if not limit or frame is None:
+            return frame
+        h, w = frame.shape[:2]
+        if max(h, w) <= limit:
+            return frame
+        scale = limit / max(h, w)
+        return cv2.resize(frame, (max(1, round(w * scale)), max(1, round(h * scale))),
+                          interpolation=cv2.INTER_AREA)
+
+    def _run_sampled_file(self):
+        """Play once at the evaluation cadence, retaining each selected frame."""
+        stride = max(1, round(self.fps / self.file_sample_fps))
+        start = time.monotonic()
+        index = 0
+        try:
+            while not self.stop_event.is_set():
+                sample_index = index
+                index += 1
+                if sample_index % stride:
+                    # Skipped frames: advance the decoder without converting to an image.
+                    if not self.cap.grab():
+                        break
+                    continue
+                ok, frame = self.cap.read()
+                if not ok:
+                    break
+                frame = self._downscale(frame)
+                timestamp = sample_index / self.fps
+                if self.stop_event.wait(max(0, start + timestamp - time.monotonic())):
+                    break
+                while not self.stop_event.is_set():
+                    try:
+                        self.buffer.put((frame, timestamp), timeout=0.1)
+                        break
+                    except Full:
+                        continue
+        finally:
+            self.running = False
+            self.cap.release()
+            self.cap = None
 
     def read(self, timeout: float = 1.0) -> Optional[Tuple[any, float]]:
         """Lấy khung hình mới nhất từ buffer cho luồng AI"""
@@ -113,6 +174,9 @@ class CaptureThread(threading.Thread):
 
     def stop(self):
         self.running = False
+        self.stop_event.set()
+        if self.file_sample_fps and self.is_alive():
+            self.join()
         if self.cap:
             self.cap.release()
             self.cap = None

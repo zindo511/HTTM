@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import numpy as np
 from src.tracking.track_manager import TrackHistory
 
@@ -19,7 +19,7 @@ class BaseBehaviorDetector(ABC):
         track: TrackHistory, 
         current_time: float, 
         frame: np.ndarray, 
-        zones: List[Dict[str, Any]]
+        zones: Optional[List[Dict[str, Any]]] = None
     ):
         """
         Phân tích hành vi của một track_id tại thời điểm current_time.

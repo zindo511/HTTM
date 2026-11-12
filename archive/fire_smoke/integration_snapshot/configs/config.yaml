@@ -1,0 +1,98 @@
+# ==============================================================================
+# HỆ THỐNG TRINH SÁT AN NINH THỜI GIAN THỰC (AI SURVEILLANCE SYSTEM CONFIG)
+# ==============================================================================
+
+system:
+  device: "cuda:0"          # "cuda:0" nếu có GPU, hoặc "cpu" (tự lùi về CPU nếu không có CUDA)
+  confidence_threshold: 0.1 # Giữ detection yếu để nối ID; ByteTrack tạo ID mới ở >= 0.4
+  inference_imgsz: 640      # Đã so sánh 640/960; 640 phù hợp tốc độ CPU hơn
+  model_pose_path: "weights/yolov8n-pose.pt"
+  model_bilstm_path: "weights/fall_bilstm.pt"
+  enable_bilstm_tier2: false # CHƯA bật: fall_bilstm.pt hiện tại chưa được train bằng dữ liệu thật
+  debug_overlay: true        # Hiện số đo chẩn đoán (AR, góc thân, Vy, V) cạnh khung người, đặt false để tắt
+
+camera:
+  source: "data/test_videos/people_walking.mp4" # Mặc định dùng video test người đi lại, đổi 0 nếu muốn dùng Webcam
+  buffer_size: 2            # Kích thước Drop-Oldest Queue (1-2) chống lag luồng RTSP
+  file_sample_fps: 10       # Nhịp phát file: 10 frame/giây. Thấp hơn (8) thì ByteTrack mất người chạy nhanh; cao hơn thì CPU không theo kịp
+  max_frame_side: 1280      # Thu nhỏ frame (vd. video 4K) về cạnh dài tối đa này trước khi xử lý; null để giữ nguyên
+
+tracking:
+  max_missing_kpts: 5       # Forward-fill toi da 5 frame
+  max_fill_seconds: 0.25   # Dong thoi gioi han tuoi pose, tranh du lieu cu khi FPS thap
+  tracker_path: "configs/bytetrack.yaml"
+  track_ttl: 5.0            # Xóa sạch dữ liệu track nếu mất dấu quá 5 giây
+
+behaviors:
+  running:
+    enabled: true
+    v_norm_threshold: 1.5   # Vận tốc gấp 1.5 lần chiều cao cơ thể / giây (BH/s)
+    body_lean_min: 15.0     # Độ đổ người nghiêng đi tối thiểu (độ), bỏ qua nếu V >= 1.5 lần ngưỡng
+    window_seconds: 0.5     # Cửa sổ thời gian đo vận tốc (giây), không phụ thuộc FPS
+    confirm_seconds: 0.15  # Thời gian liên tục vượt ngưỡng, không phụ thuộc FPS
+    max_observation_gap: 0.3 # Mất dấu lâu hơn mức này: đo lại từ đầu
+    cooldown_seconds: 4.0
+
+  falling:
+    enabled: true
+    aspect_ratio_max: 0.8   # Tỷ lệ H/W <= 0.8 (chuyển sang nằm ngang)
+    torso_angle_max: 40.0   # Góc trục thân so với mặt đất < 40 độ
+    flat_torso_max_height_ratio: 0.8 # Thân nằm ngang chỉ tính là nằm khi khung đã thấp (cúi người giữ gần đủ chiều cao)
+    flat_torso_max_aspect_ratio: 1.5 # ... và khung không cao hẹp (cúi nhặt đồ trước camera)
+    v_y_drop_min: 0.65      # Vận tốc rơi / chiều cao đứng (BH/s); 0.65 để không sót khi lấy mẫu 8 fps
+    keypoint_confidence: 0.3
+    impact_window_seconds: 1.2
+    lying_seconds: 0.5
+    lying_reacquire_gap_seconds: 0.5 # Giữ tiến độ xác nhận khi cùng ID xuất hiện lại; không cộng thời gian mất dấu
+    recovery_seconds: 0.5
+    lying_grace_seconds: 0.2      # Bỏ qua nhiễu tư thế ngắn trong pha xác minh nằm
+    collapse_window_seconds: 1.0  # Ngã chậm: chiều cao sụp mạnh trong cửa sổ này
+    collapse_height_ratio: 0.6    # ... xuống dưới tỷ lệ này so với chiều cao đứng
+    collapse_drop_min: 0.4        # ... và mất ít nhất chừng này BH (xác nhận bằng AR/góc thân, không bằng chiều cao)
+    standing_thigh_ratio: 0.5     # Đứng: gối thấp hơn hông >= 0.5 lần chiều dài thân; ngồi rồi nằm (giường, sofa) không tính là ngã chậm
+    handover_gap_seconds: 1.0    # ID mới xuất hiện trong khoảng này sau khi ID đang ngã bị mất: nhận lại trạng thái ngã
+    handover_max_distance_bh: 1.0 # Khoảng cách tâm tối đa giữa khung cũ và khung mới (theo chiều cao đứng BH)
+    impact_height_ratio: 0.65
+    lying_height_ratio: 0.55
+    top_drop_min: 1.0       # Toc do ha dinh bbox (BH/s), di kem sut chieu cao
+    velocity_window_seconds: 0.2
+    reference_window_seconds: 1.5
+    reference_warmup_seconds: 0.3
+    standing_aspect_ratio: 1.3
+    recovery_aspect_ratio: 1.2
+    recovery_height_ratio: 0.8
+    max_observation_gap: 0.4 # Chịu được mất 2 frame liên tiếp ở 8 fps
+    bilstm_fall_threshold: 0.85 # Xác suất Tier 2 để khẳng định ngã thật
+    cooldown_seconds: 15.0
+
+  fighting:
+    enabled: true
+    max_distance_bh: 1.15        # Khoảng cách tâm tối đa giữa 2 người (theo chiều cao cơ thể BH)
+    max_height_ratio: 2.0       # Lọc người tiền cảnh/hậu cảnh chồng lên nhau trong ảnh
+    limb_speed_threshold: 2.1   # Vận tốc vung tay/chân tối thiểu khi ra đòn (BH/s)
+    hold_seconds: 1.5          # Giữ cảnh báo khi tín hiệu xô xát tạm mất
+    confirm_frames: 4           # Số frame liên tiếp xác nhận xô xát
+    confirm_seconds: 0.15       # Xác nhận theo thời gian, ổn định khi FPS AI thay đổi
+    cooldown_seconds: 6.0       # Thời gian chờ giữa 2 lần báo động ẩu đả
+    clip_model:                 # Mô hình phân loại clip, train bằng train_fight_colab.ipynb
+      enabled: true
+      path: "weights/fight_clip.pt"
+      threshold: 0.45           # Ngưỡng demo; đặt null để dùng ngưỡng trong trọng số
+      veto_threshold: 0.2       # Luật theo cặp người bị bác bỏ khi xác suất mô hình dưới mức này
+      confirm_seconds: 0.5      # Xác suất phải vượt ngưỡng liên tục chừng này giây
+
+  fire_smoke:
+    enabled: false              # Mặc định tắt cho CPU; bật/tắt bằng nút "Khói & Lửa" trên dashboard
+    model_path: "weights/fire_smoke_yolov8n.pt" # Train bằng train_fire_smoke_colab.ipynb
+    conf_threshold: 0.35        # Ngưỡng tin cậy phát hiện Lửa (class 0)
+    smoke_conf_threshold: 0.40  # Ngưỡng tin cậy phát hiện Khói (class 1)
+    hand_radius_bh: 0.40        # Bán kính ghép cổ tay/mặt người với đốm lửa (theo chiều cao người BH)
+    confirm_seconds: 0.35       # Thời gian duy trì liên tục để lọc nhiễu ánh đèn / màu áo
+    max_observation_gap: 0.45   # Khoảng đứt quãng tối đa trước khi đo lại
+    infer_every_n_frames: 3     # Chạy mô hình Khói & Lửa cách 3 frame để đủ nhịp trên CPU
+    cooldown_seconds: 6.0       # Thời gian chờ giữa 2 lần báo động Khói & Lửa
+
+web:
+  host: "0.0.0.0"
+  port: 8000
+  snapshots_dir: "data/snapshots"
