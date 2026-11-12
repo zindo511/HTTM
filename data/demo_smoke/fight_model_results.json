@@ -1,0 +1,66 @@
+[
+  {
+    "clip": "fight1.mp4",
+    "events": [
+      {
+        "type": "FIGHTING",
+        "time": 0.48,
+        "info": "Ẩu đả khẩn cấp! ID #1 & #2 đang đánh nhau, vung tay quyết liệt (V=4.2 BH/s)"
+      },
+      {
+        "type": "FIGHTING",
+        "time": 1.6,
+        "info": "Ẩu đả khẩn cấp! ID #3 & #5 đang lao vào xô xát mạnh (V=2.4 BH/s)"
+      },
+      {
+        "type": "FIGHTING",
+        "time": 2.96,
+        "info": "Ẩu đả! Mô hình nhận diện xô xát tại ID #4 & #9 (p=0.40)"
+      },
+      {
+        "type": "FIGHTING",
+        "time": 8.96,
+        "info": "Ẩu đả! Mô hình nhận diện xô xát tại ID #4 & #9 (p=0.46)"
+      },
+      {
+        "type": "FIGHTING",
+        "time": 14.96,
+        "info": "Ẩu đả! Mô hình nhận diện xô xát tại ID #4 & #12 (p=0.44)"
+      }
+    ]
+  },
+  {
+    "clip": "public/sphar/running__casia_angleview_p01_run_a1.mp4",
+    "events": [
+      {
+        "type": "RUNNING",
+        "time": 1.76,
+        "info": "Chạy bứt tốc: 2.5 BH/s"
+      }
+    ]
+  },
+  {
+    "clip": "fall_sample.mp4",
+    "events": [
+      {
+        "type": "FIGHTING",
+        "time": 4.671,
+        "info": "Ẩu đả! Mô hình nhận diện xô xát tại ID #1 (p=0.39)"
+      },
+      {
+        "type": "FALLING",
+        "time": 5.088,
+        "info": "Temporal FSM verified"
+      },
+      {
+        "type": "FIGHTING",
+        "time": 10.676,
+        "info": "Ẩu đả! Mô hình nhận diện xô xát tại ID #1 (p=0.31)"
+      }
+    ]
+  },
+  {
+    "clip": "people_walking.mp4",
+    "events": []
+  }
+]

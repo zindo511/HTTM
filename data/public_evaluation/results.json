@@ -1,0 +1,934 @@
+{
+  "target_fps": 15,
+  "elapsed_seconds": 804.4,
+  "summary": {
+    "RUNNING": {
+      "positive_clips": 14,
+      "detected": 0,
+      "missed": 14,
+      "other_clips": 84,
+      "false_alarm_clips": 1,
+      "recall": 0.0,
+      "precision": 0.0
+    },
+    "FALLING": {
+      "positive_clips": 19,
+      "detected": 6,
+      "missed": 13,
+      "other_clips": 79,
+      "false_alarm_clips": 0,
+      "recall": 0.316,
+      "precision": 1.0
+    },
+    "FIGHTING": {
+      "positive_clips": 30,
+      "detected": 2,
+      "missed": 28,
+      "other_clips": 68,
+      "false_alarm_clips": 0,
+      "recall": 0.067,
+      "precision": 1.0
+    }
+  },
+  "by_source": {
+    "fight_surv:FIGHTING": {
+      "clips": 15,
+      "correct": 0
+    },
+    "fight_surv:None": {
+      "clips": 15,
+      "correct": 15
+    },
+    "sphar:FALLING": {
+      "clips": 7,
+      "correct": 0
+    },
+    "sphar:FIGHTING": {
+      "clips": 15,
+      "correct": 2
+    },
+    "sphar:RUNNING": {
+      "clips": 14,
+      "correct": 0
+    },
+    "sphar:None": {
+      "clips": 8,
+      "correct": 8
+    },
+    "ur_fall:None": {
+      "clips": 12,
+      "correct": 12
+    },
+    "ur_fall:FALLING": {
+      "clips": 12,
+      "correct": 6
+    }
+  },
+  "clips": [
+    {
+      "seconds": 2.12,
+      "max_tracks": 9,
+      "events": [],
+      "video": "fight_surv/fi001.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 2.52,
+      "max_tracks": 8,
+      "events": [],
+      "video": "fight_surv/fi002.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 2.4,
+      "max_tracks": 12,
+      "events": [],
+      "video": "fight_surv/fi003.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 3.12,
+      "max_tracks": 11,
+      "events": [],
+      "video": "fight_surv/fi004.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 2.9,
+      "max_tracks": 12,
+      "events": [],
+      "video": "fight_surv/fi005.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 2.4,
+      "max_tracks": 7,
+      "events": [],
+      "video": "fight_surv/fi006.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 2.2,
+      "max_tracks": 4,
+      "events": [],
+      "video": "fight_surv/fi007.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 2.2,
+      "max_tracks": 4,
+      "events": [],
+      "video": "fight_surv/fi008.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 2.85,
+      "max_tracks": 8,
+      "events": [],
+      "video": "fight_surv/fi009.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 3.4,
+      "max_tracks": 9,
+      "events": [],
+      "video": "fight_surv/fi010.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 2.9,
+      "max_tracks": 5,
+      "events": [],
+      "video": "fight_surv/fi011.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 3.25,
+      "max_tracks": 4,
+      "events": [],
+      "video": "fight_surv/fi012.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 2.0,
+      "max_tracks": 6,
+      "events": [],
+      "video": "fight_surv/fi013.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 2.1,
+      "max_tracks": 2,
+      "events": [],
+      "video": "fight_surv/fi014.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 2.2,
+      "max_tracks": 8,
+      "events": [],
+      "video": "fight_surv/fi015.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 3.12,
+      "max_tracks": 4,
+      "events": [],
+      "video": "fight_surv/nofi001.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 3.4,
+      "max_tracks": 3,
+      "events": [],
+      "video": "fight_surv/nofi002.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 2.4,
+      "max_tracks": 6,
+      "events": [],
+      "video": "fight_surv/nofi003.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 2.0,
+      "max_tracks": 1,
+      "events": [],
+      "video": "fight_surv/nofi004.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 2.0,
+      "max_tracks": 1,
+      "events": [],
+      "video": "fight_surv/nofi005.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 2.1,
+      "max_tracks": 2,
+      "events": [],
+      "video": "fight_surv/nofi006.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 2.83,
+      "max_tracks": 2,
+      "events": [],
+      "video": "fight_surv/nofi007.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 2.83,
+      "max_tracks": 2,
+      "events": [],
+      "video": "fight_surv/nofi008.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 2.0,
+      "max_tracks": 4,
+      "events": [],
+      "video": "fight_surv/nofi009.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 2.1,
+      "max_tracks": 2,
+      "events": [],
+      "video": "fight_surv/nofi010.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 1.97,
+      "max_tracks": 2,
+      "events": [],
+      "video": "fight_surv/nofi011.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 2.0,
+      "max_tracks": 3,
+      "events": [],
+      "video": "fight_surv/nofi012.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 2.0,
+      "max_tracks": 4,
+      "events": [],
+      "video": "fight_surv/nofi013.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 2.77,
+      "max_tracks": 1,
+      "events": [],
+      "video": "fight_surv/nofi014.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 2.7,
+      "max_tracks": 1,
+      "events": [],
+      "video": "fight_surv/nofi015.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 13.64,
+      "max_tracks": 4,
+      "events": [],
+      "video": "sphar/falling__casia_angleview_p01_faint_a1.mp4",
+      "expected": "FALLING",
+      "fired": []
+    },
+    {
+      "seconds": 27.44,
+      "max_tracks": 1,
+      "events": [],
+      "video": "sphar/falling__casia_angleview_p18_faint_a1.mp4",
+      "expected": "FALLING",
+      "fired": []
+    },
+    {
+      "seconds": 10.6,
+      "max_tracks": 1,
+      "events": [],
+      "video": "sphar/falling__casia_horizontalview_p08_faint_a1.mp4",
+      "expected": "FALLING",
+      "fired": []
+    },
+    {
+      "seconds": 18.68,
+      "max_tracks": 0,
+      "events": [],
+      "video": "sphar/falling__casia_horizontalview_p22_faint_a1.mp4",
+      "expected": "FALLING",
+      "fired": []
+    },
+    {
+      "seconds": 40.6,
+      "max_tracks": 2,
+      "events": [],
+      "video": "sphar/falling__caviar_Rest_FallOnFloor.mp4",
+      "expected": "FALLING",
+      "fired": []
+    },
+    {
+      "seconds": 36.76,
+      "max_tracks": 3,
+      "events": [],
+      "video": "sphar/falling__caviar_Rest_SlumpOnFloor.mp4",
+      "expected": "FALLING",
+      "fired": []
+    },
+    {
+      "seconds": 52.08,
+      "max_tracks": 3,
+      "events": [
+        {
+          "event_type": "RUNNING",
+          "track_id": 2,
+          "seconds": 4.4,
+          "extra_info": "Chạy bứt tốc: 1.8 BH/s"
+        }
+      ],
+      "video": "sphar/falling__caviar_Rest_WiggleOnFloor.mp4",
+      "expected": "FALLING",
+      "fired": [
+        "RUNNING"
+      ]
+    },
+    {
+      "seconds": 11.96,
+      "max_tracks": 4,
+      "events": [],
+      "video": "sphar/fighting__casia_angleview_p01p02_fight_a1.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 23.04,
+      "max_tracks": 5,
+      "events": [
+        {
+          "event_type": "FIGHTING",
+          "track_id": 14,
+          "seconds": 20.08,
+          "extra_info": "Ẩu đả khẩn cấp! ID #16 & #14 đang vung đòn tấn công vùng đầu (V=1.3 BH/s)"
+        }
+      ],
+      "video": "sphar/fighting__casia_angleview_p13p13_fight_a1.mp4",
+      "expected": "FIGHTING",
+      "fired": [
+        "FIGHTING"
+      ]
+    },
+    {
+      "seconds": 25.04,
+      "max_tracks": 4,
+      "events": [],
+      "video": "sphar/fighting__casia_horizontalview_p11p12_fight_a1.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 13.4,
+      "max_tracks": 1,
+      "events": [],
+      "video": "sphar/fighting__casia_topdownview_p08p09_fight_a1.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 17.52,
+      "max_tracks": 1,
+      "events": [],
+      "video": "sphar/fighting__caviar_Fight_Chase.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 38.64,
+      "max_tracks": 4,
+      "events": [],
+      "video": "sphar/fighting__caviar_Fight_OneManDown.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 22.32,
+      "max_tracks": 3,
+      "events": [],
+      "video": "sphar/fighting__caviar_Fight_RunAway1.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 22.32,
+      "max_tracks": 1,
+      "events": [],
+      "video": "sphar/fighting__caviar_Fight_RunAway2.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 3.23,
+      "max_tracks": 2,
+      "events": [],
+      "video": "sphar/fighting__utint_0_11_punch.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 2.47,
+      "max_tracks": 2,
+      "events": [],
+      "video": "sphar/fighting__utint_11_12_kick.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 3.53,
+      "max_tracks": 2,
+      "events": [],
+      "video": "sphar/fighting__utint_18_4_punch.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 4.0,
+      "max_tracks": 3,
+      "events": [
+        {
+          "event_type": "FIGHTING",
+          "track_id": 1,
+          "seconds": 1.93,
+          "extra_info": "Ẩu đả khẩn cấp! ID #1 & #2 đang đánh nhau, vung tay quyết liệt (V=2.5 BH/s)"
+        }
+      ],
+      "video": "sphar/fighting__utint_20_4_kick.mp4",
+      "expected": "FIGHTING",
+      "fired": [
+        "FIGHTING"
+      ]
+    },
+    {
+      "seconds": 3.5,
+      "max_tracks": 4,
+      "events": [],
+      "video": "sphar/fighting__utint_34_16_kick.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 3.67,
+      "max_tracks": 2,
+      "events": [],
+      "video": "sphar/fighting__utint_37_7_punch.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 2.87,
+      "max_tracks": 3,
+      "events": [],
+      "video": "sphar/fighting__utint_50_19_punch.mp4",
+      "expected": "FIGHTING",
+      "fired": []
+    },
+    {
+      "seconds": 4.84,
+      "max_tracks": 3,
+      "events": [],
+      "video": "sphar/running__casia_angleview_p01_run_a1.mp4",
+      "expected": "RUNNING",
+      "fired": []
+    },
+    {
+      "seconds": 4.84,
+      "max_tracks": 2,
+      "events": [],
+      "video": "sphar/running__casia_angleview_p02_run_a2.mp4",
+      "expected": "RUNNING",
+      "fired": []
+    },
+    {
+      "seconds": 3.96,
+      "max_tracks": 4,
+      "events": [],
+      "video": "sphar/running__casia_angleview_p04_run_a2.mp4",
+      "expected": "RUNNING",
+      "fired": []
+    },
+    {
+      "seconds": 6.88,
+      "max_tracks": 1,
+      "events": [],
+      "video": "sphar/running__casia_angleview_p06_run_a1.mp4",
+      "expected": "RUNNING",
+      "fired": []
+    },
+    {
+      "seconds": 5.64,
+      "max_tracks": 1,
+      "events": [],
+      "video": "sphar/running__casia_angleview_p08_run_a1.mp4",
+      "expected": "RUNNING",
+      "fired": []
+    },
+    {
+      "seconds": 4.12,
+      "max_tracks": 0,
+      "events": [],
+      "video": "sphar/running__casia_horizontalview_p01_run_a2.mp4",
+      "expected": "RUNNING",
+      "fired": []
+    },
+    {
+      "seconds": 5.4,
+      "max_tracks": 0,
+      "events": [],
+      "video": "sphar/running__casia_horizontalview_p03_run_a2.mp4",
+      "expected": "RUNNING",
+      "fired": []
+    },
+    {
+      "seconds": 5.76,
+      "max_tracks": 0,
+      "events": [],
+      "video": "sphar/running__casia_horizontalview_p05_run_a1.mp4",
+      "expected": "RUNNING",
+      "fired": []
+    },
+    {
+      "seconds": 4.72,
+      "max_tracks": 0,
+      "events": [],
+      "video": "sphar/running__casia_horizontalview_p07_run_a1.mp4",
+      "expected": "RUNNING",
+      "fired": []
+    },
+    {
+      "seconds": 5.24,
+      "max_tracks": 0,
+      "events": [],
+      "video": "sphar/running__casia_horizontalview_p08_run_a2.mp4",
+      "expected": "RUNNING",
+      "fired": []
+    },
+    {
+      "seconds": 5.68,
+      "max_tracks": 0,
+      "events": [],
+      "video": "sphar/running__casia_topdownview_p02_run_a2.mp4",
+      "expected": "RUNNING",
+      "fired": []
+    },
+    {
+      "seconds": 9.48,
+      "max_tracks": 0,
+      "events": [],
+      "video": "sphar/running__casia_topdownview_p04_run_a1.mp4",
+      "expected": "RUNNING",
+      "fired": []
+    },
+    {
+      "seconds": 11.68,
+      "max_tracks": 0,
+      "events": [],
+      "video": "sphar/running__casia_topdownview_p06_run_a1.mp4",
+      "expected": "RUNNING",
+      "fired": []
+    },
+    {
+      "seconds": 8.56,
+      "max_tracks": 0,
+      "events": [],
+      "video": "sphar/running__casia_topdownview_p07_run_a2.mp4",
+      "expected": "RUNNING",
+      "fired": []
+    },
+    {
+      "seconds": 9.2,
+      "max_tracks": 1,
+      "events": [],
+      "video": "sphar/walking__casia_angleview_p01_walk_a1.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 12.0,
+      "max_tracks": 1,
+      "events": [],
+      "video": "sphar/walking__casia_angleview_p06_walk_a2.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 12.84,
+      "max_tracks": 0,
+      "events": [],
+      "video": "sphar/walking__casia_horizontalview_p02_walk_a1.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 10.52,
+      "max_tracks": 2,
+      "events": [],
+      "video": "sphar/walking__casia_horizontalview_p06_walk_a2.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 15.88,
+      "max_tracks": 0,
+      "events": [],
+      "video": "sphar/walking__casia_topdownview_p03_walk_a1.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 42.04,
+      "max_tracks": 4,
+      "events": [],
+      "video": "sphar/walking__caviar_Browse1.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 25.24,
+      "max_tracks": 2,
+      "events": [],
+      "video": "sphar/walking__caviar_Meet_WalkSplit.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 15.64,
+      "max_tracks": 2,
+      "events": [],
+      "video": "sphar/walking__caviar_OneLeaveShopReenter1cor.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 5.0,
+      "max_tracks": 1,
+      "events": [],
+      "video": "ur_fall/adl-01.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 6.0,
+      "max_tracks": 1,
+      "events": [],
+      "video": "ur_fall/adl-02.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 6.0,
+      "max_tracks": 1,
+      "events": [],
+      "video": "ur_fall/adl-03.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 5.0,
+      "max_tracks": 1,
+      "events": [],
+      "video": "ur_fall/adl-04.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 6.0,
+      "max_tracks": 1,
+      "events": [],
+      "video": "ur_fall/adl-05.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 7.67,
+      "max_tracks": 1,
+      "events": [],
+      "video": "ur_fall/adl-06.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 6.0,
+      "max_tracks": 1,
+      "events": [],
+      "video": "ur_fall/adl-07.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 6.0,
+      "max_tracks": 1,
+      "events": [],
+      "video": "ur_fall/adl-08.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 5.0,
+      "max_tracks": 1,
+      "events": [],
+      "video": "ur_fall/adl-09.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 10.0,
+      "max_tracks": 1,
+      "events": [],
+      "video": "ur_fall/adl-10.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 10.0,
+      "max_tracks": 2,
+      "events": [],
+      "video": "ur_fall/adl-11.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 8.33,
+      "max_tracks": 1,
+      "events": [],
+      "video": "ur_fall/adl-12.mp4",
+      "expected": null,
+      "fired": []
+    },
+    {
+      "seconds": 5.33,
+      "max_tracks": 2,
+      "events": [],
+      "video": "ur_fall/fall-01.mp4",
+      "expected": "FALLING",
+      "fired": []
+    },
+    {
+      "seconds": 3.67,
+      "max_tracks": 1,
+      "events": [
+        {
+          "event_type": "FALLING",
+          "track_id": 1,
+          "seconds": 2.67,
+          "extra_info": "Temporal FSM verified"
+        }
+      ],
+      "video": "ur_fall/fall-02.mp4",
+      "expected": "FALLING",
+      "fired": [
+        "FALLING"
+      ]
+    },
+    {
+      "seconds": 7.17,
+      "max_tracks": 2,
+      "events": [],
+      "video": "ur_fall/fall-03.mp4",
+      "expected": "FALLING",
+      "fired": []
+    },
+    {
+      "seconds": 3.2,
+      "max_tracks": 2,
+      "events": [],
+      "video": "ur_fall/fall-04.mp4",
+      "expected": "FALLING",
+      "fired": []
+    },
+    {
+      "seconds": 5.03,
+      "max_tracks": 2,
+      "events": [],
+      "video": "ur_fall/fall-05.mp4",
+      "expected": "FALLING",
+      "fired": []
+    },
+    {
+      "seconds": 3.33,
+      "max_tracks": 1,
+      "events": [
+        {
+          "event_type": "FALLING",
+          "track_id": 1,
+          "seconds": 1.87,
+          "extra_info": "Temporal FSM verified"
+        }
+      ],
+      "video": "ur_fall/fall-06.mp4",
+      "expected": "FALLING",
+      "fired": [
+        "FALLING"
+      ]
+    },
+    {
+      "seconds": 5.2,
+      "max_tracks": 2,
+      "events": [],
+      "video": "ur_fall/fall-07.mp4",
+      "expected": "FALLING",
+      "fired": []
+    },
+    {
+      "seconds": 3.03,
+      "max_tracks": 1,
+      "events": [
+        {
+          "event_type": "FALLING",
+          "track_id": 1,
+          "seconds": 2.73,
+          "extra_info": "Temporal FSM verified"
+        }
+      ],
+      "video": "ur_fall/fall-08.mp4",
+      "expected": "FALLING",
+      "fired": [
+        "FALLING"
+      ]
+    },
+    {
+      "seconds": 6.17,
+      "max_tracks": 2,
+      "events": [],
+      "video": "ur_fall/fall-09.mp4",
+      "expected": "FALLING",
+      "fired": []
+    },
+    {
+      "seconds": 4.33,
+      "max_tracks": 1,
+      "events": [
+        {
+          "event_type": "FALLING",
+          "track_id": 1,
+          "seconds": 2.53,
+          "extra_info": "Temporal FSM verified"
+        }
+      ],
+      "video": "ur_fall/fall-10.mp4",
+      "expected": "FALLING",
+      "fired": [
+        "FALLING"
+      ]
+    },
+    {
+      "seconds": 4.33,
+      "max_tracks": 1,
+      "events": [
+        {
+          "event_type": "FALLING",
+          "track_id": 1,
+          "seconds": 2.67,
+          "extra_info": "Temporal FSM verified"
+        }
+      ],
+      "video": "ur_fall/fall-11.mp4",
+      "expected": "FALLING",
+      "fired": [
+        "FALLING"
+      ]
+    },
+    {
+      "seconds": 3.67,
+      "max_tracks": 1,
+      "events": [
+        {
+          "event_type": "FALLING",
+          "track_id": 1,
+          "seconds": 2.2,
+          "extra_info": "Temporal FSM verified"
+        }
+      ],
+      "video": "ur_fall/fall-12.mp4",
+      "expected": "FALLING",
+      "fired": [
+        "FALLING"
+      ]
+    }
+  ]
+}

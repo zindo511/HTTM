@@ -19,7 +19,7 @@ from ultralytics import YOLO
 from src.core.pipeline import SurveillancePipeline
 
 
-def evaluate(source, config, out, target_fps):
+def evaluate(source, config, out, target_fps, with_running=False):
     cap = cv2.VideoCapture(str(source))
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open {source}")
@@ -27,8 +27,11 @@ def evaluate(source, config, out, target_fps):
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     stride = max(1, round(fps / target_fps))
     cache_path = out / (source.stem + '-poses.json')
+    tracker_path = config.get('tracking', {}).get('tracker_path', 'bytetrack.yaml')
+    tracker_file = Path(tracker_path)
     key = [source.stat().st_size, source.stat().st_mtime_ns, stride,
-           config['system']['confidence_threshold']]
+           config['system']['confidence_threshold'], config['system'].get('inference_imgsz', 640),
+           tracker_path, tracker_file.read_text(encoding='utf-8') if tracker_file.is_file() else None]
     cached = json.loads(cache_path.read_text()) if cache_path.exists() else {}
     poses = cached.get('poses', {}) if cached.get('key') == key else {}
     model = None
@@ -42,7 +45,8 @@ def evaluate(source, config, out, target_fps):
         cv2.imwrite(str(out / f'{source.stem}-{len(events)}-{event["event_type"]}.jpg'), kwargs['frame'])
 
     cfg = copy.deepcopy(config)
-    cfg['behaviors']['running']['enabled'] = False
+    if not with_running:
+        cfg['behaviors']['running']['enabled'] = False
     cfg['web']['snapshots_dir'] = str(out / 'snapshots')
     with patch('src.core.pipeline.DatabaseService') as db:
         db.return_value.count_total_events.side_effect = lambda: len(events)
@@ -79,7 +83,8 @@ def evaluate(source, config, out, target_fps):
             if str(index) not in poses:
                 if model is None:
                     model = YOLO(config['system']['model_pose_path'])
-                r = model.track(frame, persist=True, classes=[0], tracker='bytetrack.yaml',
+                r = model.track(frame, persist=True, classes=[0], tracker=tracker_path,
+                                imgsz=config['system'].get('inference_imgsz', 640),
                                 conf=config['system']['confidence_threshold'], verbose=False, device='cpu')[0]
                 found = r.boxes is not None and r.boxes.id is not None
                 poses[str(index)] = {
@@ -130,6 +135,7 @@ def main():
     parser.add_argument('--fps', type=float, default=15)
     parser.add_argument('--output', type=Path, default=Path('data/behavior_evaluation'))
     parser.add_argument('--check', action='store_true', help='Assert expected events for the reviewed sample clips')
+    parser.add_argument('--with-running', action='store_true', help='Also evaluate running using the configured detector')
     args = parser.parse_args()
     torch.set_num_threads(2)
     out = args.output
@@ -137,13 +143,14 @@ def main():
     cfg = yaml.safe_load(Path('configs/config.yaml').read_text(encoding='utf-8'))
     report = []
     for name in args.videos:
-        row = evaluate(Path('data/test_videos') / name, cfg, out, args.fps)
+        row = evaluate(Path('data/test_videos') / name, cfg, out, args.fps, args.with_running)
         report.append(row)
         (out / 'results.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
         print(json.dumps({k:v for k,v in row.items() if k != 'state_transitions'}, ensure_ascii=False), flush=True)
     if args.check:
         expected = {'fight1.mp4': {'FIGHTING'}, 'fall_sample.mp4': {'FALLING'},
-                    '01_video.mp4': set(), '02_video.mp4': set(), 'people_walking.mp4': set()}
+                    '01_video.mp4': set(), '02_video.mp4': set(), 'people_walking.mp4': set(),
+                    'running__casia_angleview_p01_run_a1.mp4': {'RUNNING'}}
         checks = []
         for row in report:
             if row['video'] not in expected:

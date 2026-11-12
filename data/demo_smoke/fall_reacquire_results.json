@@ -1,0 +1,243 @@
+[
+  {
+    "clip": "nga_test.mp4",
+    "events": [
+      {
+        "t": 13.76,
+        "event": "FALLING"
+      }
+    ],
+    "diagnostics": {
+      "sampled_frames": 265,
+      "tracked_frames": 168,
+      "fall_phases": [
+        "FALL_LATCHED",
+        "IMPACT_PENDING",
+        "LYING_VERIFY",
+        "NORMAL"
+      ],
+      "standing_reference": true,
+      "run_speed_available": true,
+      "run_speed_reached": false,
+      "run_condition_met": false
+    }
+  },
+  {
+    "clip": "fall_sample.mp4",
+    "events": [
+      {
+        "t": 5.088,
+        "event": "FALLING"
+      }
+    ],
+    "diagnostics": {
+      "sampled_frames": 136,
+      "tracked_frames": 136,
+      "fall_phases": [
+        "FALL_LATCHED",
+        "LYING_VERIFY",
+        "NORMAL"
+      ],
+      "standing_reference": true,
+      "run_speed_available": true,
+      "run_speed_reached": false,
+      "run_condition_met": false
+    }
+  },
+  {
+    "clip": "people_walking.mp4",
+    "events": [],
+    "diagnostics": {
+      "sampled_frames": 596,
+      "tracked_frames": 241,
+      "fall_phases": [
+        "NORMAL"
+      ],
+      "standing_reference": true,
+      "run_speed_available": true,
+      "run_speed_reached": false,
+      "run_condition_met": false
+    }
+  },
+  {
+    "clip": "adl-01.mp4",
+    "events": [],
+    "diagnostics": {
+      "sampled_frames": 75,
+      "tracked_frames": 69,
+      "fall_phases": [
+        "NORMAL"
+      ],
+      "standing_reference": true,
+      "run_speed_available": true,
+      "run_speed_reached": false,
+      "run_condition_met": false
+    }
+  },
+  {
+    "clip": "adl-02.mp4",
+    "events": [],
+    "diagnostics": {
+      "sampled_frames": 90,
+      "tracked_frames": 72,
+      "fall_phases": [
+        "NORMAL"
+      ],
+      "standing_reference": true,
+      "run_speed_available": true,
+      "run_speed_reached": false,
+      "run_condition_met": false
+    }
+  },
+  {
+    "clip": "adl-03.mp4",
+    "events": [],
+    "diagnostics": {
+      "sampled_frames": 90,
+      "tracked_frames": 90,
+      "fall_phases": [
+        "NORMAL"
+      ],
+      "standing_reference": true,
+      "run_speed_available": true,
+      "run_speed_reached": false,
+      "run_condition_met": false
+    }
+  },
+  {
+    "clip": "adl-04.mp4",
+    "events": [],
+    "diagnostics": {
+      "sampled_frames": 75,
+      "tracked_frames": 75,
+      "fall_phases": [
+        "NORMAL"
+      ],
+      "standing_reference": true,
+      "run_speed_available": true,
+      "run_speed_reached": false,
+      "run_condition_met": false
+    }
+  },
+  {
+    "clip": "adl-05.mp4",
+    "events": [],
+    "diagnostics": {
+      "sampled_frames": 90,
+      "tracked_frames": 90,
+      "fall_phases": [
+        "NORMAL"
+      ],
+      "standing_reference": true,
+      "run_speed_available": true,
+      "run_speed_reached": false,
+      "run_condition_met": false
+    }
+  },
+  {
+    "clip": "adl-06.mp4",
+    "events": [],
+    "diagnostics": {
+      "sampled_frames": 115,
+      "tracked_frames": 106,
+      "fall_phases": [
+        "NORMAL"
+      ],
+      "standing_reference": true,
+      "run_speed_available": true,
+      "run_speed_reached": false,
+      "run_condition_met": false
+    }
+  },
+  {
+    "clip": "adl-07.mp4",
+    "events": [],
+    "diagnostics": {
+      "sampled_frames": 90,
+      "tracked_frames": 90,
+      "fall_phases": [
+        "NORMAL"
+      ],
+      "standing_reference": true,
+      "run_speed_available": true,
+      "run_speed_reached": false,
+      "run_condition_met": false
+    }
+  },
+  {
+    "clip": "adl-08.mp4",
+    "events": [],
+    "diagnostics": {
+      "sampled_frames": 90,
+      "tracked_frames": 84,
+      "fall_phases": [
+        "NORMAL"
+      ],
+      "standing_reference": true,
+      "run_speed_available": true,
+      "run_speed_reached": false,
+      "run_condition_met": false
+    }
+  },
+  {
+    "clip": "adl-09.mp4",
+    "events": [],
+    "diagnostics": {
+      "sampled_frames": 75,
+      "tracked_frames": 75,
+      "fall_phases": [
+        "NORMAL"
+      ],
+      "standing_reference": true,
+      "run_speed_available": true,
+      "run_speed_reached": false,
+      "run_condition_met": false
+    }
+  },
+  {
+    "clip": "adl-10.mp4",
+    "events": [],
+    "diagnostics": {
+      "sampled_frames": 150,
+      "tracked_frames": 150,
+      "fall_phases": [
+        "NORMAL"
+      ],
+      "standing_reference": true,
+      "run_speed_available": true,
+      "run_speed_reached": false,
+      "run_condition_met": false
+    }
+  },
+  {
+    "clip": "adl-11.mp4",
+    "events": [],
+    "diagnostics": {
+      "sampled_frames": 150,
+      "tracked_frames": 138,
+      "fall_phases": [
+        "NORMAL"
+      ],
+      "standing_reference": true,
+      "run_speed_available": true,
+      "run_speed_reached": false,
+      "run_condition_met": false
+    }
+  },
+  {
+    "clip": "adl-12.mp4",
+    "events": [],
+    "diagnostics": {
+      "sampled_frames": 125,
+      "tracked_frames": 96,
+      "fall_phases": [
+        "IMPACT_PENDING",
+        "NORMAL"
+      ],
+      "standing_reference": true,
+      "run_speed_available": true,
+      "run_speed_reached": false,
+      "run_condition_met": false
+    }
+  }
+]

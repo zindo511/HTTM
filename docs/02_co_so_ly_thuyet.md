@@ -39,27 +39,27 @@ flowchart LR
 
 ## 2.2. Thuật toán bám vết đa đối tượng (Multi-Object Tracking với ByteTrack)
 
-### 2.2.1. Vai trò của Tracking trong bài toán trinh sát
-Mô hình phát hiện đối tượng (Object Detection) chỉ xử lý độc lập từng khung hình mà không có sự liên kết thời gian. Để phát hiện được các hành vi diễn ra theo chuỗi thời gian như **Lảng vảng (đo thời gian tồn tại)** hay **Chạy (đo vận tốc qua các frame)**, hệ thống bắt buộc phải sử dụng thuật toán **Bám vết đa đối tượng (Multi-Object Tracking - MOT)** nhằm duy trì một mã định danh duy nhất (`Track ID`) cho mỗi cá nhân xuyên suốt video.
+### 2.2.1. Vai trò của Tracking trong bài toán giám sát
+Mô hình phát hiện đối tượng (Object Detection) chỉ xử lý độc lập từng khung hình mà không có sự liên kết thời gian. Để phát hiện được các hành vi diễn ra theo chuỗi thời gian như **Chạy nhanh (đo vận tốc qua các khung hình)**, **Té ngã (hạ người rồi nằm lại)** hay **Đánh nhau (theo dõi từng cặp người)**, hệ thống bắt buộc phải sử dụng thuật toán **Bám vết đa đối tượng (Multi-Object Tracking - MOT)** nhằm duy trì một mã định danh duy nhất (`Track ID`) cho mỗi cá nhân xuyên suốt video.
 
 ### 2.2.2. Bộ lọc Kalman (Kalman Filter)
 ByteTrack sử dụng mô hình chuyển động tuyến tính dựa trên bộ lọc Kalman để ước lượng và dự báo trạng thái không gian của từng đối tượng:
 - **Vector trạng thái 8 chiều:**
-  $$\mathbf{x} = [u, v, s, r, \dot{u}, \dot{v}, \dot{s}, \dot{r}]^T$$
-  Trong đó $(u, v)$ là tọa độ tâm của bounding box, $s$ là tỷ lệ diện tích ($w \times h$), $r$ là tỷ lệ khung hình ($w / h$), và các biến có dấu chấm đại diện cho vận tốc biến thiên tương ứng.
+  $$\mathbf{x} = [x, y, a, h, \dot{x}, \dot{y}, \dot{a}, \dot{h}]^T$$
+  Trong đó $(x, y)$ là tọa độ tâm bounding box, $a = w / h$ là tỷ lệ khung hình, $h$ là chiều cao, và các biến có dấu chấm là vận tốc biến thiên tương ứng (bộ lọc `KalmanFilterXYAH` trong thư viện Ultralytics).
 - **Hai pha hoạt động liên tục:**
   1. *Pha dự đoán (Predict):* Dựa vào phương trình động học để dự báo vị trí mới của đối tượng ở khung hình hiện tại trước khi có kết quả phát hiện mới.
   2. *Pha cập nhật (Update):* Kết hợp vị trí dự đoán với bounding box thực tế vừa nhận diện được từ YOLO để tối ưu hóa và hiệu chỉnh trạng thái bám vết.
 
 ### 2.2.3. Cơ chế kết hợp ByteTrack (Association with Low-Score Boxes)
 Điểm đột phá của ByteTrack so với các thuật toán truyền thống (như SORT hay DeepSORT) là **không vứt bỏ các bounding box có điểm tin cậy thấp**:
-- Khi đối tượng bị che khuất một phần (occlusion), bị nhòe mờ do chuyển động nhanh (motion blur) hoặc ánh sáng yếu, điểm tin cậy detection thường bị tụt xuống dưới ngưỡng thông thường (ví dụ: rơi vào khoảng $0.1 - 0.5$). Các thuật toán cũ lập tức loại bỏ các box này, dẫn đến đứt chuỗi theo dõi và gán ID mới.
+- Khi đối tượng bị che khuất một phần (occlusion), bị nhòe mờ do chuyển động nhanh (motion blur) hoặc ánh sáng yếu, điểm tin cậy detection thường bị tụt xuống dưới ngưỡng thông thường (ví dụ: rơi vào khoảng $0.1 - 0.25$). Các thuật toán cũ lập tức loại bỏ các box này, dẫn đến đứt chuỗi theo dõi và gán ID mới.
 - **Quy trình ghép cặp hai giai đoạn (Two-Stage Association) của ByteTrack:**
 
 ```mermaid
 flowchart TD
-    D[Tập Bounding Boxes từ YOLO] --> D_high[Hộp điểm cao D_high: Conf >= 0.5]
-    D --> D_low[Hộp điểm thấp D_low: 0.1 <= Conf < 0.5]
+    D[Tập Bounding Boxes từ YOLO] --> D_high[Hộp điểm cao D_high: Conf >= 0.25]
+    D --> D_low[Hộp điểm thấp D_low: 0.1 <= Conf < 0.25]
 
     T[Tập các vết đang theo dõi - Tracks] --> Predict[Dự đoán vị trí mới qua Kalman Filter]
 
@@ -73,92 +73,97 @@ flowchart TD
 ```
 
 1. **Ghép cặp lần 1 (First Association):** Ghép các hộp điểm cao ($\mathcal{D}_{high}$) với các vị trí dự đoán từ Kalman Filter thông qua ma trận chi phí khoảng cách IoU (Intersection over Union) và giải thuật Hungarian.
-2. **Ghép cặp lần 2 (Second Association):** Đối với các Track còn sót lại chưa ghép được, ByteTrack tiếp tục đem ghép với tập các hộp điểm thấp ($\mathcal{D}_{low}$). Nếu khớp, Track này vẫn được giữ lại, giải quyết triệt để vấn đề mất dấu khi người bị che khuất hoặc cúi gập người khi ngã.
+2. **Ghép cặp lần 2 (Second Association):** Đối với các Track còn sót lại chưa ghép được, ByteTrack tiếp tục đem ghép với tập các hộp điểm thấp ($\mathcal{D}_{low}$). Nếu khớp, Track này vẫn được giữ lại, giảm đáng kể việc mất dấu khi người bị che khuất một phần hoặc cúi gập người khi ngã.
+
+> **Ghi chú triển khai:** hệ thống dùng ByteTrack với tham số mặc định của Ultralytics (`track_high_thresh = 0.25`, `track_low_thresh = 0.1`, `track_buffer = 30`, `match_thresh = 0.8`). Ngoài ra pipeline chỉ nhận các phát hiện có độ tin cậy từ `confidence_threshold = 0.4` trở lên (cấu hình trong `configs/config.yaml`), nên trên thực tế nhánh ghép cặp với hộp điểm thấp hiếm khi được dùng tới.
 
 ---
 
-## 2.3. Các phương pháp biểu diễn quỹ đạo chuyển động và phân tích hình học tư thế người
+## 2.3. Biểu diễn chuyển động và phân tích hình học tư thế người
 
-### 2.3.1. Biểu diễn quỹ đạo không gian - thời gian (Spatio-Temporal Trajectory)
-Đối với mỗi đối tượng có mã định danh $ID$, quỹ đạo chuyển động được mô hình hóa thành một chuỗi thời gian các điểm tọa độ tiếp xúc mặt đất (Foot-Point Trajectory):
-$$\mathcal{T}_{ID} = \left\{ \mathbf{p}_t = (x_{foot}^{(t)}, y_{foot}^{(t)}), \quad t \in [t_{start}, t_{curr}] \right\}$$
-Trong đó điểm tiếp đất được chuẩn hóa từ cạnh đáy Bounding Box:
-$$x_{foot} = \frac{x_1 + x_2}{2}, \quad y_{foot} = y_2$$
+Mọi đại lượng dưới đây đều được tính trên dữ liệu của từng `track_id`: chuỗi bounding box, chuỗi 17 khớp xương và **mốc thời gian thực** của từng khung hình. Vì tốc độ khung hình của khâu AI thay đổi theo phần cứng, mọi vận tốc được tính bằng hiệu thời gian thực $\Delta t$ (giây), không giả định FPS cố định.
 
-### 2.3.2. Thuật toán kiểm tra điểm trong đa giác (Point-in-Polygon - PiP) cho hành vi Xâm nhập
-Để kiểm tra xem một điểm $\mathbf{p} = (x_{foot}, y_{foot})$ có xâm nhập vào khu vực cấm hay không, hệ thống áp dụng thuật toán **Ray Casting (Bắn tia)** hoặc phương pháp số lần cuốn (Winding Number):
-- Từ điểm $\mathbf{p}$, phóng một tia song song vô hạn theo trục hoành $X$.
-- Đếm số lần tia này cắt các cạnh của đa giác vùng cấm:
-  $$\text{IsInside}(\mathbf{p}, \mathcal{P}) = 
-  \begin{cases} 
-  \text{True (Nằm trong vùng cấm)} & \text{nếu số giao điểm là số lẻ} \\
-  \text{False (Nằm ngoài vùng an toàn)} & \text{nếu số giao điểm là số chẵn}
-  \end{cases}$$
+### 2.3.1. Đơn vị chuẩn hoá: chiều cao cơ thể (Body Height – BH)
+Khoảng cách và vận tốc tính bằng pixel không so sánh được giữa người ở gần và người ở xa camera. Hệ thống chia mọi độ dài cho chiều cao bounding box $H$ của chính người đó, thu được đơn vị **BH** (số lần chiều cao cơ thể) và **BH/s** cho vận tốc. Trên các video mẫu của dự án, vận tốc lớn nhất của người đi bộ bình thường phần lớn nằm dưới $1{,}3$ BH/s.
 
-### 2.3.3. Phân tích thời gian lưu trú và bán kính di chuyển cho hành vi Lảng vảng
-Một đối tượng được xếp loại là **Lảng vảng (Loitering)** khi thỏa mãn đồng thời hai điều kiện không gian và thời gian:
-1. **Thời gian lưu trú (Dwell Time $\Delta t$):**
-   $$\Delta t = t_{curr} - t_{entry} \ge \tau_{loiter} \quad (\text{ví dụ: } \tau_{loiter} = 10 \text{ giây})$$
-2. **Bán kính dịch chuyển giới hạn (Spatial Confinement):**
-   Khoảng cách từ vị trí hiện tại so với tâm điểm trung bình của toàn bộ quỹ đạo trong quá khứ không vượt quá bán kính ngưỡng $R_{threshold}$:
-   $$\|\mathbf{p}_t - \bar{\mathbf{p}}\| \le R_{threshold}, \quad \text{với } \bar{\mathbf{p}} = \frac{1}{N}\sum_{i=1}^N \mathbf{p}_i$$
-   *(Điều kiện này giúp loại bỏ trường hợp người chỉ đi ngang qua vùng giám sát).*
+### 2.3.2. Động học hành vi Chạy nhanh
 
-### 2.3.4. Phân tích hình học tư thế và động học cho hành vi Chạy và Ngã
+1. **Vận tốc tịnh tiến chuẩn hoá $V_{norm}$.** Trên cửa sổ thời gian $W$ (mặc định $0{,}5$ giây):
+   $$V_{norm} = \frac{\|\bar{\mathbf{c}}_{new} - \bar{\mathbf{c}}_{old}\|}{(\bar{t}_{new} - \bar{t}_{old}) \cdot H_{ref}}$$
+   Trong đó $\bar{\mathbf{c}}_{new}$, $\bar{\mathbf{c}}_{old}$ là **trung bình tâm bounding box của 3 khung hình** ở hai đầu cửa sổ (lấy trung bình để giảm nhiễu rung của khung), $\bar{t}$ là trung bình mốc thời gian tương ứng, và $H_{ref}$ là **trung vị chiều cao** bounding box trong cửa sổ (trung vị bền hơn trung bình khi khung bị co giãn đột ngột).
 
-#### A. Phân tích động học hành vi Chạy (Running Kinematics)
-Để nhận diện chính xác hành vi Chạy — đặc biệt trong không gian quan sát hẹp ($3 - 5\text{m}$) và triệt tiêu ảnh hưởng của biến dạng phối cảnh (Perspective Distortion), hệ thống áp dụng cơ chế đánh giá đa thông số kết hợp giữa **vận tốc tịnh tiến chuẩn hóa** và **đặc trưng dáng điệu từ YOLO-Pose**:
+2. **Độ đổ người về phía trước (Body Lean).** Từ góc trục thân $\theta$ (mục 2.3.3), độ đổ người là $90^\circ - \theta$. Khi chạy, thân người thường nghiêng về hướng di chuyển.
 
-1. **Vận tốc tịnh tiến chuẩn hóa theo chiều cao ($V_{norm}$):**
-   Vận tốc tức thời của đối tượng trong cửa sổ trượt $W = [t - k, t]$ được chuẩn hóa theo chiều cao khung bao $H$:
-   $$V_{norm}(t) = \frac{\|\mathbf{p}_t - \mathbf{p}_{t-k}\|}{k \cdot \Delta t \cdot H_t} \quad (\text{đơn vị: Body Heights / second - } BH/s)$$
-   - Ngưỡng kích hoạt vận tốc: $V_{norm}(t) > V_{threshold}$ (với $V_{threshold} \approx 1.5 - 2.0 \, BH/s$, gấp $2.5 - 3$ lần đi bộ thông thường).
+3. **Điều kiện nghi vấn chạy tại một thời điểm:**
+   $$V_{norm} \ge V_{th} \;\wedge\; \big(\text{Lean} \ge \text{Lean}_{min} \;\vee\; V_{norm} \ge 1{,}5 \cdot V_{th}\big)$$
+   với $V_{th} = 1{,}5$ BH/s và $\text{Lean}_{min} = 15^\circ$. Vế thứ hai cho phép bỏ qua điều kiện đổ người khi vận tốc đã rất cao (ví dụ khi khớp vai/hông bị che).
 
-2. **Độ đổ người về phía trước (Forward Body Lean):**
-   Khi chuyển từ đi bộ sang bứt tốc chạy, trọng tâm cơ thể luôn đổ dồn về hướng di chuyển để tạo lực đẩy. Góc trục thân người $\theta$ (so với phương ngang) sẽ nghiêng giảm đi khoảng $15^\circ - 25^\circ$ so với trạng thái đi bộ thẳng đứng thông thường ($\theta_{run} \approx 65^\circ - 75^\circ$ thay vì $85^\circ - 90^\circ$).
+4. **Xác nhận theo thời gian.** Chỉ báo chạy khi điều kiện trên đúng trong `confirm_frames` lần đo liên tiếp (mặc định 3), để loại các đột biến một khung hình do nhiễu bám vết.
 
-3. **Biên độ và tần số dao động chi dưới (Keypoints 13, 14, 15, 16):**
-   Trong không gian hẹp khi quãng đường di chuyển chưa đủ dài, hành vi chạy bứt tốc còn được đặc trưng mạnh mẽ bởi:
-   - Tần số nâng/hạ luân phiên với tốc độ cao của hai khớp đầu gối (Left Knee - 13, Right Knee - 14).
-   - Biên độ mở rộng góc sải chân và tần suất dịch chuyển vị trí tiếp đất của hai cổ chân (Left Ankle - 15, Right Ankle - 16).
+> **Giới hạn:** $V_{norm}$ đo dịch chuyển trong mặt phẳng ảnh. Người chạy dọc theo trục nhìn của camera gần như không dịch chuyển trong ảnh nên có thể bị bỏ sót. Tín hiệu bổ sung như tần suất bước chân từ khớp gối/cổ chân chưa được cài đặt.
 
-> $\rightarrow$ Sự phối hợp giữa $V_{norm}(t)$, góc đổ người $\theta$, và dao động khớp chi dưới (13-16) tạo thành bộ lọc 3 lớp vững chắc, giúp hệ thống phát hiện chính xác cú bứt tốc ngay từ $1 - 1.5\text{m}$ đầu tiên mà hoàn toàn loại trừ được các cảnh báo giả do bước nhanh hoặc đứng gần camera.
-
-#### B. Phân tích hình học bộ xương cho hành vi Ngã (Fall Detection Geometry)
-Hành vi ngã được xác định thông qua sự kết hợp của 3 chỉ số hình thái:
+### 2.3.3. Hình học tư thế cho hành vi Té ngã
 
 ```text
          ĐỨNG THẲNG                              NGÃ NẰM NGANG
             Vai                                  Hông --------- Vai
              |                                    |              |
-             |  Trục thân: θ ≈ 80° - 90°          +--------------+  Trục thân: θ < 30° - 45°
+             |  Trục thân: θ ≈ 80° - 90°          +--------------+  Trục thân: θ < 40°
              |                                    (Mặt đất)
             Hông
 ```
 
-1. **Góc nghiêng trục thân người (Torso Lean Angle $\theta$):**
-   > [!NOTE]
-   > **Quy ước thống nhất:** $\theta$ là góc nghiêng của trục thân người so với phương ngang (trục hoành $Ox$ của mặt phẳng ảnh).
-   
-   Xác định bởi vector nối giữa trung điểm hai vai $\mathbf{p}_{shoulder}$ và trung điểm hai hông $\mathbf{p}_{hip}$:
+1. **Góc trục thân $\theta$** — góc giữa đoạn nối trung điểm hai vai với trung điểm hai hông và phương ngang của ảnh:
    $$\theta = \arctan\left(\frac{|y_{hip} - y_{shoulder}|}{|x_{hip} - x_{shoulder}|}\right) \times \frac{180^\circ}{\pi}$$
-   - Trạng thái đứng/đi: $\theta \in [70^\circ, 90^\circ]$ (trục thân dựng đứng gần như vuông góc với phương ngang mặt đất).
-   - Trạng thái ngã: $\theta$ giảm đột ngột xuống $< 30^\circ - 45^\circ$ (trục thân nằm ngang song song mặt đất).
+   Đứng/đi: $\theta \approx 70^\circ - 90^\circ$. Nằm ngang: $\theta \le 40^\circ$. Khớp chỉ được dùng khi độ tin cậy $\ge 0{,}3$; nếu chỉ thấy một bên vai/hông thì dùng bên đó.
 
-2. **Tỷ lệ co giãn khung bao (Bounding Box Aspect Ratio - $AR$):**
-   $$AR = \frac{\text{Height}}{\text{Width}} = \frac{H}{W}$$
-   - Khi đứng: $AR \ge 1.5$ (chiều cao vượt trội chiều rộng).
-   - Khi ngã xuống mặt sàn: $AR \le 0.8$ (chiều rộng trải dài hơn chiều cao).
+2. **Tỷ lệ khung bao $AR$:**
+   $$AR = \frac{H}{W}$$
+   Đứng: $AR \ge 1{,}3$. Nằm trên sàn: $AR \le 0{,}8$.
 
-3. **Vận tốc rơi thẳng đứng của trọng tâm (Vertical Drop Velocity):**
-   $$V_y = \frac{y_{hip}^{(t)} - y_{hip}^{(t-\Delta t)}}{\Delta t \cdot H_t}$$
-   Cú ngã luôn đi kèm một pha gia tốc rơi tự do tức thời ($V_y$ có độ lớn dương lớn đột biến theo phương hướng xuống đất), giúp phân biệt hành vi ngã bất ngờ với việc chủ động nằm/ngồi xuống sàn từ tốn.
+3. **Chiều cao đứng tham chiếu $H_{ref}$.** Trung vị chiều cao bounding box trong $1{,}5$ giây gần nhất **khi người đang đứng** ($AR > 1{,}3$). Giá trị này bị đóng băng ngay khi có nghi vấn ngã, để các phép đo sau đó luôn so với chiều cao lúc còn đứng.
+
+4. **Tỷ lệ chiều cao hiện tại:** $r = H / H_{ref}$. Người nằm hoặc sụp xuống có $r \le 0{,}55$.
+
+5. **Vận tốc rơi của trọng tâm** trên cửa sổ $0{,}2$ giây:
+   $$V_y = \frac{y_{hip}^{(t)} - y_{hip}^{(t - \Delta t)}}{\Delta t \cdot H_{ref}}$$
+   Nếu khớp hông không hợp lệ ở một trong hai đầu cửa sổ thì dùng tâm bounding box thay thế (không trộn hông với tâm khung giữa hai đầu). Tương tự, **vận tốc hạ đỉnh khung** $V_{top}$ đo tốc độ đi xuống của cạnh trên bounding box.
+
+6. **Hai nhóm điều kiện:**
+   - *Va chạm (impact):* $V_y \ge 0{,}8$ BH/s, **hoặc** ($r \le 0{,}65$ **và** $V_{top} \ge 1{,}0$ BH/s). Sụt chiều cao đơn thuần không đủ, vì ngồi xổm chậm cũng làm giảm chiều cao.
+   - *Tư thế thấp (low):* $AR \le 0{,}8$ **hoặc** $\theta \le 40^\circ$ **hoặc** $r \le 0{,}55$.
+
+   Cách hai nhóm điều kiện này được ghép theo thời gian thành máy trạng thái được trình bày ở mục 3.3.
+
+### 2.3.4. Đặc trưng theo cặp người cho hành vi Đánh nhau
+
+Với mỗi cặp người $(A, B)$ cùng xuất hiện trong khung hình:
+
+1. **Khoảng cách chuẩn hoá:** $D_{norm} = \dfrac{\|\mathbf{c}_A - \mathbf{c}_B\|}{(H_A + H_B)/2}$, với $\mathbf{c}$ là tâm bounding box.
+
+2. **Độ chồng lấn** $IoU(A, B)$ giữa hai bounding box.
+
+3. **Lọc chênh lệch phối cảnh.** Nếu cả hai đều đang đứng ($AR > 1{,}2$) mà $\max(H_A, H_B) / \min(H_A, H_B) > 2$, hai người thực ra ở hai độ sâu khác nhau (tiền cảnh – hậu cảnh) và chỉ chồng lên nhau trong ảnh 2D; cặp này bị loại.
+
+4. **Vận tốc tứ chi tương đối $V_{limb}$.** Với các khớp khuỷu tay, cổ tay, cổ chân, lấy vị trí **tương đối so với tâm thân** (trung bình hai vai và hai hông), rồi đo tốc độ thay đổi của vị trí tương đối này qua 3 khung hình, chia cho chiều cao cơ thể:
+   $$V_{limb} = \max_{k \in \text{khớp tứ chi}} \frac{\|(\mathbf{p}_k^{(t)} - \mathbf{c}_{torso}^{(t)}) - (\mathbf{p}_k^{(t')} - \mathbf{c}_{torso}^{(t')})\|}{(t - t') \cdot H}$$
+   Trừ đi chuyển động của thân giúp phân biệt "vung tay ra đòn" với "cả người đang di chuyển".
+
+5. **Độ giật lắc của thân $A_{torso}$:** vận tốc tâm bounding box qua 2 khung hình, tính bằng BH/s. Dùng khi hai người ôm vật nhau và cổ tay bị che khuất.
+
+6. **Vận tốc áp sát $V_{close}$:** tốc độ giảm của $D_{norm}$ theo thời gian.
+
+7. **Vùng trúng đòn.** Một khớp tay (khuỷu/cổ tay) của người này nằm cách các điểm đầu của người kia dưới $0{,}28$ BH, hoặc nằm trong bounding box (nới thêm $0{,}22$ BH) của người kia; hoặc khớp cổ chân nằm trong bounding box của người kia ở trên mức bàn chân (đá).
+
+Ba dấu hiệu được định nghĩa từ các đại lượng trên — *ra đòn*, *vật lộn*, *lao vào nhau* — được trình bày ở mục 3.5.
 
 ---
 
 ## 2.4. Mô hình học sâu chuỗi thời gian nhận diện hành động (Temporal Deep Learning for Skeleton-based Action Recognition)
 
-Bên cạnh các quy tắc hình học heuristic (Rule-based) ở mục 2.3, để hệ thống đạt độ chính xác cao trong các kịch bản phức tạp (tránh nhầm lẫn giữa ngã thật với việc cúi nhặt đồ, ngồi xổm, hoặc tập thể dục), kiến trúc học sâu phân loại chuỗi thời gian dựa trên khung xương được tích hợp vào hệ thống.
+Bên cạnh các quy tắc hình học heuristic (Rule-based) ở mục 2.3, để hệ thống đạt độ chính xác cao trong các kịch bản phức tạp (tránh nhầm lẫn giữa ngã thật với việc cúi nhặt đồ, ngồi xổm, hoặc tập thể dục), kiến trúc học sâu phân loại chuỗi thời gian dựa trên khung xương được thiết kế làm tầng xác minh thứ hai.
+
+> **Trạng thái thực hiện:** kiến trúc mạng, script trích xuất dữ liệu và script huấn luyện đã có trong mã nguồn, nhưng **mô hình chưa được huấn luyện bằng dữ liệu thật** và tầng xác minh này đang tắt (`enable_bilstm_tier2: false`). Mục này trình bày cơ sở lý thuyết của thiết kế.
 
 ### 2.4.1. Bài toán nhận diện hành động dựa trên chuỗi khung xương (Skeleton-based Action Recognition)
 Thay vì nạp toàn bộ các khung hình video RGB thô (vốn chứa hàng triệu pixel và gây áp lực tính toán cực lớn), mô hình chỉ tiếp nhận tọa độ 17 điểm khớp xương trích xuất từ YOLO-Pose qua thời gian:
@@ -205,6 +210,8 @@ Khả năng ghi nhớ ngữ cảnh theo chuỗi thời gian của LSTM giúp h�
 - **Hành vi Ngồi xổm / Cúi người (Squatting / Bending):** Trọng tâm hạ thấp nhưng có chủ đích, gia tốc chuyển động mượt mà, hai bàn chân vẫn giữ nguyên vị trí bám sàn và thân người không nằm bẹp xuống đất.
 - **Hành vi Từ từ nằm nghỉ:** Không có pha gia tốc rơi tự do tức thời.
 
-Đầu ra của bước thời gian cuối cùng ($h_T$) được đưa qua một lớp nơ-ron kết nối đầy đủ (Dense Layer) kết hợp hàm kích hoạt Softmax để dự đoán xác suất hành vi:
+Mạng hai chiều (Bi-LSTM) chạy thêm một LSTM theo chiều ngược thời gian và ghép hai trạng thái ẩn lại, để mỗi thời điểm có ngữ cảnh cả trước lẫn sau. Đầu ra tại bước thời gian cuối cùng ($h_T$) được đưa qua lớp Dropout và một lớp kết nối đầy đủ, rồi qua Softmax để thu xác suất ba lớp (Bình thường, Chạy, Ngã):
 $$\hat{y} = \text{Softmax}(\mathbf{W}_{out} \cdot h_T + b_{out})$$
-Mô hình tự huấn luyện (Self-trained / Fine-tuned) này giúp hệ thống đạt độ nhạy cao và giảm thiểu tối đa các cảnh báo giả trong môi trường giám sát thực tế.
+Mức độ cải thiện thực tế của tầng xác minh này chỉ có thể khẳng định sau khi huấn luyện và đánh giá trên dữ liệu có nhãn (xem Chương 4).
+
+> **Lưu ý về cài đặt hiện tại:** mã nguồn lấy đầu ra của Bi-LSTM tại bước thời gian cuối. Ở vị trí đó nhánh ngược chiều mới chỉ đọc một khung hình, nên phần lớn thông tin đến từ nhánh xuôi. Khi huấn luyện lại nên ghép trạng thái ẩn cuối của cả hai chiều hoặc lấy trung bình theo thời gian.

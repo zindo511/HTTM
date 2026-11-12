@@ -1,0 +1,91 @@
+[
+  {
+    "clip": "adl-01-640-detections.json",
+    "variant": "low_conf_640_no_fusion",
+    "frames": 75,
+    "detected_frames": 71,
+    "tracked_frames": 69,
+    "coverage": 0.92,
+    "track_ids": 1,
+    "max_speed": 0.412,
+    "events": [],
+    "inference_ms_per_frame": 62.12
+  },
+  {
+    "clip": "fall-01-640-detections.json",
+    "variant": "low_conf_640_no_fusion",
+    "frames": 80,
+    "detected_frames": 77,
+    "tracked_frames": 77,
+    "coverage": 0.963,
+    "track_ids": 1,
+    "max_speed": 1.246,
+    "events": [],
+    "inference_ms_per_frame": 68.96
+  },
+  {
+    "clip": "falling__casia_horizontalview_p08_faint_a1-640-detections.json",
+    "variant": "low_conf_640_no_fusion",
+    "frames": 133,
+    "detected_frames": 62,
+    "tracked_frames": 48,
+    "coverage": 0.361,
+    "track_ids": 1,
+    "max_speed": 0.807,
+    "events": [],
+    "inference_ms_per_frame": 103.34
+  },
+  {
+    "clip": "running__casia_angleview_p01_run_a1-640-detections.json",
+    "variant": "low_conf_640_no_fusion",
+    "frames": 61,
+    "detected_frames": 33,
+    "tracked_frames": 30,
+    "coverage": 0.492,
+    "track_ids": 2,
+    "max_speed": 2.195,
+    "events": [],
+    "inference_ms_per_frame": 110.63
+  },
+  {
+    "clip": "running__casia_horizontalview_p01_run_a2-640-detections.json",
+    "variant": "low_conf_640_no_fusion",
+    "frames": 52,
+    "detected_frames": 10,
+    "tracked_frames": 0,
+    "coverage": 0.0,
+    "track_ids": 0,
+    "max_speed": 0.0,
+    "events": [],
+    "inference_ms_per_frame": 255.52
+  },
+  {
+    "clip": "walking__casia_horizontalview_p02_walk_a1-640-detections.json",
+    "variant": "low_conf_640_no_fusion",
+    "frames": 161,
+    "detected_frames": 14,
+    "tracked_frames": 0,
+    "coverage": 0.0,
+    "track_ids": 0,
+    "max_speed": 0.0,
+    "events": [],
+    "inference_ms_per_frame": 63.69
+  },
+  {
+    "clip": "fight1-640-detections.json",
+    "variant": "low_conf_640_no_fusion",
+    "frames": 234,
+    "detected_frames": 234,
+    "tracked_frames": 233,
+    "coverage": 0.996,
+    "track_ids": 11,
+    "max_speed": 0.838,
+    "events": [
+      {
+        "time": 3.44,
+        "type": "FALLING"
+      }
+    ],
+    "inference_ms_per_frame": 59.95
+  }
+]

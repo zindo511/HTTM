@@ -1,0 +1,32 @@
+[
+  {
+    "clip": "data/test_videos/public/sphar/running__casia_angleview_p01_run_a1.mp4",
+    "frames": 61,
+    "events": [
+      "RUNNING"
+    ],
+    "ws_messages": 1
+  },
+  {
+    "clip": "data/test_videos/fall_sample.mp4",
+    "frames": 136,
+    "events": [
+      "FALLING"
+    ],
+    "ws_messages": 1
+  },
+  {
+    "clip": "data/test_videos/fight1.mp4",
+    "frames": 234,
+    "events": [
+      "FIGHTING"
+    ],
+    "ws_messages": 2
+  },
+  {
+    "clip": "data/test_videos/people_walking.mp4",
+    "frames": 596,
+    "events": [],
+    "ws_messages": 0
+  }
+]
