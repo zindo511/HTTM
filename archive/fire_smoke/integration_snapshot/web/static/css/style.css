@@ -1,0 +1,320 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+body {
+    background-color: #0f172a;
+    color: #f8fafc;
+    overflow-x: hidden;
+}
+
+header {
+    background-color: #1e293b;
+    padding: 12px 24px;
+    border-bottom: 1px solid #334155;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+header h1 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #38bdf8;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.status-badge {
+    background-color: #065f46;
+    color: #34d399;
+    padding: 4px 10px;
+    border-radius: 9999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.main-container {
+    display: flex;
+    height: calc(100vh - 120px);
+    gap: 16px;
+    padding: 16px;
+}
+
+/* KHUNG CAMERA CHÍNH (70%) */
+.stream-panel {
+    flex: 7;
+    background-color: #1e293b;
+    border-radius: 8px;
+    border: 1px solid #334155;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.stream-wrapper {
+    position: relative;
+    flex: 1;
+    background-color: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.stream-wrapper {
+    min-height: 0;
+    overflow: hidden;
+}
+
+.stream-wrapper img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.stream-controls {
+    flex-shrink: 0;
+}
+
+.demo-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-top: 1px solid #334155;
+}
+
+.demo-controls span {
+    color: #cbd5e1;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.demo-source {
+    background: #334155;
+    color: #f8fafc;
+}
+
+.demo-source:hover,
+.demo-source[aria-pressed="true"] {
+    background: #0369a1;
+}
+
+.detector-toggle {
+    background: #334155;
+    color: #f8fafc;
+    border: 1px solid #475569;
+}
+
+.detector-toggle:hover:not(:disabled) {
+    background: #475569;
+}
+
+.detector-toggle[aria-pressed="true"] {
+    background: #b91c1c;
+    border-color: #ef4444;
+}
+
+.detector-toggle[aria-pressed="true"]:hover:not(:disabled) {
+    background: #991b1b;
+}
+
+.detector-toggle:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.detector-controls small {
+    color: #94a3b8;
+    font-size: 0.78rem;
+}
+
+.phone-camera {
+    padding: 10px 16px;
+    border-top: 1px solid #334155;
+    font-size: 0.85rem;
+}
+
+.phone-camera summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.phone-camera form {
+    display: grid;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.phone-camera-input {
+    display: flex;
+    gap: 8px;
+}
+
+.phone-camera-input input {
+    flex: 1;
+    min-width: 0;
+    padding: 8px;
+    color: #f8fafc;
+    background: #0f172a;
+    border: 1px solid #64748b;
+    border-radius: 6px;
+}
+
+#phoneCameraHint, #phoneCameraStatus {
+    color: #cbd5e1;
+}
+
+.stream-controls {
+    padding: 12px 16px;
+    background-color: #1e293b;
+    border-top: 1px solid #334155;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.btn {
+    padding: 8px 14px;
+    border-radius: 6px;
+    border: none;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-primary {
+    background-color: #0284c7;
+    color: #fff;
+}
+.btn-primary:hover {
+    background-color: #0369a1;
+}
+
+.btn-success {
+    background-color: #059669;
+    color: #fff;
+}
+
+.btn-danger {
+    background-color: #dc2626;
+    color: #fff;
+}
+
+/* CỘT CẢNH BÁO WEBSOCKET (30%) */
+.alert-panel {
+    flex: 3;
+    background-color: #1e293b;
+    border-radius: 8px;
+    border: 1px solid #334155;
+    display: flex;
+    flex-direction: column;
+}
+
+.panel-header {
+    padding: 14px 16px;
+    font-weight: 700;
+    font-size: 1rem;
+    border-bottom: 1px solid #334155;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.alert-feed {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.alert-card {
+    background-color: #0f172a;
+    border-radius: 6px;
+    padding: 12px;
+    border-left: 4px solid #38bdf8;
+    display: flex;
+    gap: 12px;
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+.alert-card.FALLING {
+    border-left-color: #ef4444;
+}
+
+.alert-card.LOITERING {
+    border-left-color: #eab308;
+}
+
+.alert-card.RUNNING {
+    border-left-color: #f97316;
+}
+.alert-card.FIGHTING { border-left-color: #a855f7;
+}
+
+.alert-thumb {
+    width: 60px;
+    height: 60px;
+    border-radius: 4px;
+    object-fit: cover;
+    background-color: #334155;
+}
+
+.alert-info {
+    flex: 1;
+}
+
+.alert-title {
+    font-weight: 700;
+    font-size: 0.9rem;
+    display: flex;
+    justify-content: space-between;
+}
+
+.alert-time {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    margin-top: 2px;
+}
+
+.alert-desc {
+    font-size: 0.8rem;
+    color: #cbd5e1;
+    margin-top: 4px;
+}
+
+/* THANH THỐNG KÊ NHANH */
+footer {
+    height: 50px;
+    background-color: #1e293b;
+    border-top: 1px solid #334155;
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    color: #94a3b8;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Modal xem lai anh snapshot canh bao */
+.snapshot-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 9999; cursor: zoom-out; }
+.snapshot-modal-box { max-width: 90vw; max-height: 90vh; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px; color: #e2e8f0; }
+.snapshot-modal-box img { max-width: 100%; max-height: 75vh; display: block; margin: 0 auto 8px; border-radius: 4px; }
+.snapshot-modal-info { font-size: 0.85rem; text-align: center; }
+.live-alert-banner { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: rgba(220, 38, 38, 0.94); color: #fff; padding: 10px 20px; border-radius: 8px; border: 2px solid #fde047; font-weight: 700; font-size: 0.95rem; box-shadow: 0 8px 24px rgba(0,0,0,0.6); z-index: 50; pointer-events: none; text-align: center; animation: fadeIn 0.2s ease-out; }

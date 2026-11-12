@@ -38,3 +38,8 @@ data/snapshots/*
 data/surveillance.db
 data/*.npy
 data/behavior_evaluation*/snapshots/
+
+# Kết quả/log đánh giá sinh ra khi chạy
+data/public_evaluation.log
+data/public_evaluation/snapshots/
+data/public_evaluation/*.mp4
