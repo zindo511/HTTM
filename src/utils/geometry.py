@@ -67,3 +67,31 @@ def normalize_skeleton_root_relative(
         norm_kpts[k, 1] = (keypoints_17[k, 1] - root_y) / height
         
     return norm_kpts.flatten()
+
+
+def is_same_person(kpts_a: Optional[np.ndarray], box_a, kpts_b: Optional[np.ndarray], box_b,
+                   conf_thresh: float = 0.3, max_mean_dist: float = 0.15, min_common: int = 5) -> bool:
+    """
+    Hai detection có phải cùng một người không (YOLO đôi khi vẽ 2 khung lồng nhau cho một người,
+    nhất là khi người nằm ngang hoặc ảnh bị xoay).
+    So bộ khớp xương: nếu >= min_common khớp cùng nhìn thấy và khoảng cách trung bình giữa các khớp
+    tương ứng < max_mean_dist x đường chéo khung nhỏ hơn thì coi là trùng.
+    Hai người thật đứng sát / ôm vật nhau vẫn có khớp xương lệch nhau rõ nên không bị gộp.
+    """
+    if kpts_a is None or kpts_b is None:
+        return False
+    a, b = np.asarray(kpts_a), np.asarray(kpts_b)
+    if a.shape != b.shape or a.ndim != 2 or a.shape[0] != 17:
+        return False
+    visible = np.ones(17, dtype=bool)
+    if a.shape[1] > 2:
+        visible = (a[:, 2] >= conf_thresh) & (b[:, 2] >= conf_thresh)
+    visible &= np.isfinite(a[:, :2]).all(axis=1) & np.isfinite(b[:, :2]).all(axis=1)
+    if int(visible.sum()) < min_common:
+        return False
+    diag = min(math.hypot(box_a[2] - box_a[0], box_a[3] - box_a[1]),
+               math.hypot(box_b[2] - box_b[0], box_b[3] - box_b[1]))
+    if diag <= 0:
+        return False
+    dist = np.linalg.norm(a[visible, :2] - b[visible, :2], axis=1).mean()
+    return float(dist) / diag < max_mean_dist
