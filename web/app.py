@@ -3,6 +3,7 @@ import json
 import asyncio
 import shutil
 from typing import List
+from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -19,6 +20,12 @@ app.mount("/static", StaticFiles(directory="web/static"), name="static")
 app.mount("/snapshots", StaticFiles(directory="data/snapshots"), name="snapshots")
 
 templates = Jinja2Templates(directory="web/templates")
+DEMO_CLIPS = (
+    ("Đi bộ", "data/test_videos/people_walking.mp4"),
+    ("Chạy nhanh", "data/test_videos/public/sphar/running__casia_angleview_p01_run_a1.mp4"),
+    ("Té ngã", "data/test_videos/fall_sample.mp4"),
+    ("Đánh nhau", "data/test_videos/fight1.mp4"),
+)
 
 # Quản lý các kết nối WebSocket đang hoạt động
 class ConnectionManager:
@@ -91,7 +98,10 @@ async def start_shared_stream():
 
 @app.get("/", response_class=HTMLResponse)
 async def get_index(request: Request):
-    return templates.TemplateResponse(request=request, name="index.html")
+    return templates.TemplateResponse(request=request, name="index.html", context={
+        "demo_clips": [(name, path) for name, path in DEMO_CLIPS if Path(path).is_file()],
+        "current_source": str(global_capture.source) if global_capture is not None else None,
+    })
 
 
 @app.websocket("/ws/alerts")
@@ -135,9 +145,10 @@ async def get_events():
         return []
     # Trả về cùng định dạng với gói tin WebSocket /ws/alerts để frontend dùng chung
     events = []
-    for row in global_pipeline.db_service.get_recent_events(limit=30):
+    for row in global_pipeline.db_service.get_recent_events(limit=50):
         snapshot_name = os.path.basename((row.get("snapshot_path") or "").replace("\\", "/"))
         events.append({
+            "event_id": row.get("event_id"),
             "event_type": row["event_type"],
             "track_id": row["track_id"],
             "zone_id": row["zone_id"] or "N/A",
@@ -156,6 +167,26 @@ async def get_event_stats():
         return {"total": 0, "by_type": {}}
     by_type = global_pipeline.db_service.count_events_by_type()
     return {"total": sum(by_type.values()), "by_type": by_type}
+
+
+@app.delete("/api/events/{event_id}")
+async def delete_event(event_id: int):
+    global global_pipeline
+    if not global_pipeline:
+        return _error("Hệ thống chưa sẵn sàng", 503)
+    global_pipeline.db_service.delete_event(event_id)
+    by_type = global_pipeline.db_service.count_events_by_type()
+    return {"status": "success", "stats": {"total": sum(by_type.values()), "by_type": by_type}}
+
+
+@app.delete("/api/events")
+async def clear_events(event_type: str = "ALL"):
+    global global_pipeline
+    if not global_pipeline:
+        return _error("Hệ thống chưa sẵn sàng", 503)
+    deleted = global_pipeline.db_service.clear_events(event_type)
+    by_type = global_pipeline.db_service.count_events_by_type()
+    return {"status": "success", "deleted": deleted, "stats": {"total": sum(by_type.values()), "by_type": by_type}}
 
 
 UPLOAD_DIR = "data/test_videos"
@@ -177,7 +208,11 @@ def _switch_source(new_source) -> bool:
     if same_device:
         # Webcam không mở được 2 lần cùng lúc: buộc phải đóng trước.
         old_capture.stop()
-    new_capture = CaptureThread(source=new_source, buffer_size=2)
+    camera = global_pipeline.config.get("camera", {}) if global_pipeline else {}
+    new_capture = CaptureThread(source=new_source, buffer_size=camera.get("buffer_size", 2),
+                                file_sample_fps=camera.get("file_sample_fps"),
+                                max_frame_side=camera.get("max_frame_side"),
+                                rotate=camera.get("rotate", 0))
     if not new_capture.start_capture():
         if same_device:
             global_capture = None
@@ -185,8 +220,6 @@ def _switch_source(new_source) -> bool:
     global_capture = new_capture
     if old_capture is not None and not same_device:
         old_capture.stop()
-    if global_pipeline:
-        global_pipeline.request_reset()
     return True
 
 
