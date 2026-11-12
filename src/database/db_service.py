@@ -111,3 +111,30 @@ class DatabaseService:
                     d["confidence"] = struct.unpack("<f", d["confidence"])[0] if len(d["confidence"]) == 4 else 0.0
                 events.append(d)
             return events
+
+    def delete_event(self, event_id: int) -> bool:
+        """Xoá 1 cảnh báo theo ID và đồng bộ lại bộ đếm."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM events WHERE event_id = ?", (int(event_id),))
+            deleted = cursor.rowcount > 0
+            conn.commit()
+        if deleted:
+            with self._count_lock:
+                self._event_counts = self._load_event_counts()
+        return deleted
+
+    def clear_events(self, event_type: Optional[str] = None) -> int:
+        """Xoá toàn bộ cảnh báo hoặc xoá theo loại hành vi và đồng bộ lại bộ đếm."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            if event_type and event_type != "ALL":
+                cursor.execute("DELETE FROM events WHERE event_type = ?", (event_type,))
+            else:
+                cursor.execute("DELETE FROM events")
+            deleted = cursor.rowcount
+            conn.commit()
+        with self._count_lock:
+            self._event_counts = self._load_event_counts()
+        return deleted
+

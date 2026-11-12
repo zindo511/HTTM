@@ -12,7 +12,7 @@ from src.behaviors.fighting import FightingDetector
 from src.models.bilstm_verifier import BiLSTMInferenceWrapper
 from src.core.alert_manager import AlertManager
 from src.database.db_service import DatabaseService
-from src.utils.geometry import get_foot_point
+from src.utils.geometry import get_foot_point, is_same_person
 from src.utils.visualizer import (
     draw_bounding_box,
     draw_foot_point,
@@ -71,7 +71,8 @@ class SurveillancePipeline:
         self.track_manager = TrackManager(
             track_ttl=self.track_cfg.get("track_ttl", 5.0),
             max_missing_kpts=self.track_cfg.get("max_missing_kpts", 5),
-            max_fill_seconds=self.track_cfg.get("max_fill_seconds", 0.25)
+            max_fill_seconds=self.track_cfg.get("max_fill_seconds", 0.25),
+            motion_history_seconds=max(2.0, self.behav_cfg.get("running", {}).get("window_seconds", 0.5) + 0.5)
         )
 
         # 4. Các module hành vi nghiệp vụ
@@ -83,6 +84,22 @@ class SurveillancePipeline:
         )
         self.fighting_detector = FightingDetector(self.behav_cfg.get("fighting", {}), self.alert_manager)
 
+        # Mô hình phân loại clip cho đánh nhau (tuỳ chọn, train bằng train_fight_colab.ipynb)
+        self.fight_model = None
+        self.last_fight_probability = None
+        clip_cfg = (self.behav_cfg.get("fighting", {}) or {}).get("clip_model") or {}
+        if clip_cfg.get("enabled", False):
+            clip_path = clip_cfg.get("path", "weights/fight_clip.pt")
+            if os.path.exists(clip_path):
+                from src.models.fight_classifier import FightClipInference
+                self.fight_model = FightClipInference(clip_path, device=self.device)
+                print(f"[INFO] Đã nạp mô hình đánh nhau: {clip_path} "
+                      f"(ngưỡng đề xuất {self.fight_model.recommended_threshold:.2f})")
+            else:
+                print(f"[WARNING] clip_model.enabled=true nhưng không thấy {clip_path}; "
+                      "đánh nhau chỉ dùng luật theo cặp người.")
+        self._configure_fight_threshold()
+
         # Thống kê hiệu năng
         self.total_alerts = 0
         self.last_time = time.time()
@@ -92,9 +109,35 @@ class SurveillancePipeline:
         """Đánh dấu cần xoá trạng thái bám vết (gọi khi đổi nguồn video, an toàn giữa các luồng)."""
         self._reset_requested = True
 
+    def _configure_fight_threshold(self):
+        """Nếu config không đặt ngưỡng thì dùng ngưỡng được chọn lúc train (lưu trong checkpoint)."""
+        if self.fight_model is not None and self.fighting_detector.model_threshold is None:
+            self.fighting_detector.model_threshold = self.fight_model.recommended_threshold
+
+    @staticmethod
+    def _drop_duplicate_people(boxes, kpts_data, confs) -> set:
+        """Chỉ giữ một detection cho mỗi người: bỏ khung có bộ khớp xương trùng với khung tin cậy hơn.
+        Tránh 1 người bị đếm thành 2 ID (sinh cảnh báo đánh nhau giả, nhân đôi cảnh báo chạy/ngã)."""
+        n = len(boxes)
+        if kpts_data is None or n < 2:
+            return set(range(n))
+        try:
+            scores = [float(c) for c in confs] if confs is not None and len(confs) == n else [0.0] * n
+        except TypeError:
+            scores = [0.0] * n
+        order = sorted(range(n), key=lambda i: -scores[i])
+        keep = []
+        for i in order:
+            if not any(is_same_person(kpts_data[i], boxes[i], kpts_data[j], boxes[j]) for j in keep):
+                keep.append(i)
+        return set(keep)
+
     def _reset_tracking_state(self):
         self.track_manager.tracks.clear()
         self.fighting_detector = FightingDetector(self.behav_cfg.get("fighting", {}), self.alert_manager)
+        self._configure_fight_threshold()
+        if self.fight_model is not None:
+            self.fight_model.reset()
         # Buộc ByteTrack khởi tạo lại để ID không nối từ video cũ sang video mới
         if getattr(self.yolo_model, "predictor", None) is not None:
             self.yolo_model.predictor = None
@@ -104,6 +147,7 @@ class SurveillancePipeline:
         if getattr(self, "_reset_requested", False):
             self._reset_requested = False
             self._reset_tracking_state()
+            self.last_time = timestamp
 
         # Tính FPS tức thời
         dt = timestamp - self.last_time
@@ -118,7 +162,8 @@ class SurveillancePipeline:
             source=frame,
             persist=True,
             classes=[0],
-            tracker="bytetrack.yaml",
+            tracker=self.track_cfg.get("tracker_path", "bytetrack.yaml"),
+            imgsz=self.sys_cfg.get("inference_imgsz", 640),
             conf=self.sys_cfg.get("confidence_threshold", 0.4),
             device=self.device,
             verbose=False
@@ -137,9 +182,13 @@ class SurveillancePipeline:
 
             has_kpts = results.keypoints is not None
             kpts_data = results.keypoints.data.cpu().numpy() if has_kpts else None
-
+            confs = (results.boxes.conf.cpu().numpy()
+                     if getattr(results.boxes, "conf", None) is not None else None)
+            keep = self._drop_duplicate_people(boxes, kpts_data, confs)
 
             for i, (bbox, tid) in enumerate(zip(boxes, track_ids)):
+                if i not in keep:
+                    continue
                 active_count += 1
                 foot_point = get_foot_point(bbox)
                 kpts = kpts_data[i] if has_kpts else None
@@ -154,14 +203,23 @@ class SurveillancePipeline:
                 )
 
                 # 3a. Phân tích Chạy & Té ngã
+                # ID mới sinh ra giữa cú ngã: nhận lại trạng thái ngã của ID vừa mất
+                if (len(track.bbox_history) == 1
+                        and self.behav_cfg.get("falling", {}).get("enabled", True)):
+                    self.motion_fall_detector.adopt_fall_candidate(
+                        track, self.track_manager.tracks.values(), current_time)
                 self.motion_fall_detector.process(track, current_time, annotated_frame)
 
                 active_tracks.append(track)
                 track_render_items.append((track, bbox, int(tid), foot_point, kpts))
 
         # 3b. Phân tích hành vi Ẩu đả / Đánh nhau
-        fight_info = self.fighting_detector.process_all(active_tracks, current_time, annotated_frame)
-        # Preserve a latched fall even when the fighting detector changes display state.
+        fight_prob = self.fight_model.update(frame, current_time) if self.fight_model is not None else None
+        self.last_fight_probability = fight_prob
+        fight_info = self.fighting_detector.process_all(
+            active_tracks, current_time, annotated_frame, model_prob=fight_prob)
+
+        # Preserve a latched fall even when other detectors change display state.
         for track in active_tracks:
             if track.fall_phase == "FALL_LATCHED":
                 track.current_state = "FALLING_ALERT"
@@ -182,7 +240,7 @@ class SurveillancePipeline:
             if self.sys_cfg.get("debug_overlay", True):
                 draw_debug_metrics(annotated_frame, bbox, getattr(track, "debug_metrics", {}))
 
-        # Vẽ khung bao vùng ẩu đả và banner cảnh báo đỏ lên annotated_frame
+        # Vẽ khung bao vùng ẩu đả lên annotated_frame
         draw_fighting_overlay(annotated_frame, fight_info)
 
         # 4b. Phát cảnh báo Ẩu đả kèm ảnh snapshot ĐÃ ĐƯỢC VẼ KHUNG & BANNER RÕ RÀNG

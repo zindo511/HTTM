@@ -54,8 +54,9 @@ def draw_bounding_box(frame: np.ndarray, bbox: Tuple[float, float, float, float]
     # Vẽ nhãn phía trên hộp
     (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
     top_y = max(20, y1)
-    cv2.rectangle(frame, (x1, top_y - 20), (x1 + w + 10, top_y), color, -1)
-    cv2.putText(frame, label, (x1 + 5, top_y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLOR_WHITE, 1, cv2.LINE_AA)
+    label_x = max(0, min(x1, frame.shape[1] - w - 10))
+    cv2.rectangle(frame, (label_x, top_y - 20), (label_x + w + 10, top_y), color, -1)
+    cv2.putText(frame, label, (label_x + 5, top_y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLOR_WHITE, 1, cv2.LINE_AA)
 
 
 def draw_foot_point(frame: np.ndarray, foot_point: Tuple[float, float]):
@@ -198,6 +199,6 @@ def draw_hud(frame: np.ndarray, fps: float, active_tracks: int, alerts_count: in
     cv2.rectangle(frame, (10, 10), (10 + box_w, 78), (0, 0, 0), -1)
     cv2.rectangle(frame, (10, 10), (10 + box_w, 78), (100, 100, 100), 1)
     
-    cv2.putText(frame, f"FPS: {fps:.1f} (Zero-Lag Stream)", (18, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 255, 0), 1, cv2.LINE_AA)
+    cv2.putText(frame, f"FPS mau: {fps:.1f}", (18, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 255, 0), 1, cv2.LINE_AA)
     cv2.putText(frame, f"Nguoi trong tam nhin: {active_tracks:02d}", (18, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (255, 255, 255), 1, cv2.LINE_AA)
     cv2.putText(frame, f"Tong so canh bao: {alerts_count:02d}", (18, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 0, 255) if alerts_count > 0 else (200, 200, 200), 1, cv2.LINE_AA)
